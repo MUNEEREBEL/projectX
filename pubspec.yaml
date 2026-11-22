@@ -1,0 +1,48 @@
+name: x
+description: "PrivDoc AI - Smart Indian Document Vault, Expiry Radar & Floating Form Copilot"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^2.6.1
+  
+  # Local SQLite Database
+  sqflite: ^2.4.1
+  sqflite_common_ffi: ^2.3.4+4
+  path: ^1.9.1
+  path_provider: ^2.1.5
+
+  # Ephemeral High-Speed Vision & Q&A
+  google_generative_ai: ^0.4.6
+
+  # Document File & Scoped Folder Selection
+  file_picker: ^8.1.7
+  permission_handler: ^11.3.1
+  
+  # PDF Extraction & Image Processing
+  syncfusion_flutter_pdf: '>=28.0.0'
+  image: ^4.3.0
+
+  # Expiry & Renewal Alerts
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
+
+  # Utilities
+  intl: ^0.20.2
+  uuid: ^4.5.1
+  shared_preferences: ^2.3.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
