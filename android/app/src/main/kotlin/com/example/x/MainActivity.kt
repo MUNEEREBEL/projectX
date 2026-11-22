@@ -1,99 +1,81 @@
 package com.example.x
 
-import com.example.x.capability.DeviceProbe
-import com.example.x.scanner.DiscoveryEngine
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class MainActivity : FlutterActivity() {
-    private val METHOD_CHANNEL = "com.example.x/mediastore"
-    private val EVENT_CHANNEL = "com.example.x/mediastore_stream"
-    private val CAPABILITY_CHANNEL = "com.example.x/device_capability"
+    private val OVERLAY_CHANNEL = "com.example.x/assistive_overlay"
+    private var methodChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CAPABILITY_CHANNEL).setMethodCallHandler { call, result ->
+        methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OVERLAY_CHANNEL)
+        methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
-                "probe" -> {
-                    val includeSustained = (call.argument<Boolean>("sustained")) ?: false
-                    // Off the main thread: the sustained-load exercise blocks.
-                    CoroutineScope(Dispatchers.Default).launch {
-                        try {
-                            val probe = DeviceProbe(applicationContext)
-                            val snapshot = probe.collect(includeSustained)
-                            runOnUiThread { result.success(snapshot) }
-                        } catch (e: Exception) {
-                            runOnUiThread {
-                                result.error("CAPABILITY_ERROR", e.message, null)
-                            }
+                "canDrawOverlays" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        result.success(Settings.canDrawOverlays(this))
+                    } else {
+                        result.success(true)
+                    }
+                }
+                "requestOverlayPermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        val intent = Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:$packageName")
+                        )
+                        startActivity(intent)
+                        result.success(true)
+                    } else {
+                        result.success(true)
+                    }
+                }
+                "startAssistiveBall" -> {
+                    try {
+                        val intent = Intent(this, AssistiveBallService::class.java)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
                         }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SERVICE_START_FAILED", e.message, null)
+                    }
+                }
+                "stopAssistiveBall" -> {
+                    try {
+                        val intent = Intent(this, AssistiveBallService::class.java)
+                        stopService(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SERVICE_STOP_FAILED", e.message, null)
                     }
                 }
                 else -> result.notImplemented()
             }
         }
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "ping" -> result.success("pong")
-                "startDiscovery", "getMediaStoreFiles" -> {
-                    val discoveryEngine = DiscoveryEngine(applicationContext.contentResolver)
-                    CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            val list = discoveryEngine.discoverAll()
-                            runOnUiThread {
-                                result.success(list)
-                            }
-                        } catch (e: Exception) {
-                            runOnUiThread {
-                                result.error("DISCOVERY_ERROR", e.message, null)
-                            }
-                        }
-                    }
-                }
-                else -> result.notImplemented()
-            }
+        // Handle case where activity opened from AssistiveBall tap
+        checkIntentForCopilot(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        checkIntentForCopilot(intent)
+    }
+
+    private fun checkIntentForCopilot(intent: Intent?) {
+        if (intent?.getBooleanExtra("OPEN_COPILOT", false) == true) {
+            methodChannel?.invokeMethod("onOpenCopilotRequested", null)
         }
-
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL).setStreamHandler(
-            object : EventChannel.StreamHandler {
-                private var scanJob: kotlinx.coroutines.Job? = null
-
-                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                    if (events == null) return
-                    scanJob?.cancel()
-                    val discoveryEngine = DiscoveryEngine(applicationContext.contentResolver)
-                    scanJob = CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            discoveryEngine.discoverInBatches(batchSize = 500) { batch, isCompleted ->
-                                val payload = mapOf(
-                                    "batch" to batch,
-                                    "isCompleted" to isCompleted
-                                )
-                                runOnUiThread {
-                                    events.success(payload)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            runOnUiThread {
-                                events.error("DISCOVERY_ERROR", e.message, null)
-                            }
-                        }
-                    }
-                }
-
-                override fun onCancel(arguments: Any?) {
-                    scanJob?.cancel()
-                    scanJob = null
-                }
-            }
-        )
     }
 }
-

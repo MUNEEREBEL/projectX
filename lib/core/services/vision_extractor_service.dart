@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import '../config/app_config.dart';
 import '../utils/indian_doc_validator.dart';
 
 class ExtractionResult {
@@ -62,17 +62,9 @@ class ExtractionResult {
 }
 
 class VisionExtractorService {
-  static const String _prefApiKey = 'gemini_api_key';
+  static Future<String?> getApiKey() => AppConfig.getApiKey();
 
-  static Future<String?> getApiKey() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_prefApiKey);
-  }
-
-  static Future<void> setApiKey(String key) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefApiKey, key.trim());
-  }
+  static Future<void> setApiKey(String key) => AppConfig.setApiKey(key);
 
   /// Main extraction method for files (Images or PDFs)
   static Future<ExtractionResult> extractDocument({

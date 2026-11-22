@@ -232,4 +232,12 @@ class DatabaseService {
     }
     await batch.commit(noResult: true);
   }
+
+  Future<void> clearAllData() async {
+    final db = await database;
+    await db.delete('document_fields');
+    await db.delete('alerts');
+    await db.delete('documents');
+    await db.delete('persons');
+  }
 }

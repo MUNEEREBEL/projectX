@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/config/app_config.dart';
+import '../../core/database/database_service.dart';
 import '../../core/services/alert_service.dart';
 import '../../core/services/folder_sync_service.dart';
-import '../../core/services/vision_extractor_service.dart';
+import '../../core/services/overlay_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../overlay/assistive_ball_dialog.dart';
 
@@ -19,6 +21,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _folderPath;
   bool _isSavedKey = false;
   bool _obscureKey = true;
+  bool _hasActiveKey = false;
+  bool _canDrawOverlays = false;
+  bool _isOverlayServiceRunning = false;
 
   @override
   void initState() {
@@ -27,23 +32,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final key = await VisionExtractorService.getApiKey();
+    final key = await AppConfig.getApiKey();
     final folder = await FolderSyncService.getSelectedFolderPath();
     final prefs = await SharedPreferences.getInstance();
-    final ownerName = prefs.getString('vault_owner_name') ?? 'Vault Owner';
+    final ownerName = prefs.getString('vault_owner_name') ?? 'Primary Cardholder';
+    final overlayPermitted = await OverlayService.canDrawOverlays();
 
     if (mounted) {
       setState(() {
         if (key != null) _apiKeyController.text = key;
+        _hasActiveKey = key != null && key.isNotEmpty;
         _folderPath = folder;
         _ownerNameController.text = ownerName;
+        _canDrawOverlays = overlayPermitted;
       });
     }
   }
 
   Future<void> _saveApiKey() async {
-    await VisionExtractorService.setApiKey(_apiKeyController.text);
-    setState(() => _isSavedKey = true);
+    await AppConfig.setApiKey(_apiKeyController.text.trim());
+    setState(() {
+      _isSavedKey = true;
+      _hasActiveKey = _apiKeyController.text.trim().isNotEmpty;
+    });
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) setState(() => _isSavedKey = false);
     });
@@ -54,8 +65,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setString('vault_owner_name', _ownerNameController.text.trim());
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Owner name updated.')),
+        const SnackBar(content: Text('Primary cardholder name updated.')),
       );
+    }
+  }
+
+  Future<void> _toggleOverlayService(bool enable) async {
+    if (enable) {
+      final permitted = await OverlayService.canDrawOverlays();
+      if (!permitted) {
+        await OverlayService.requestOverlayPermission();
+        return;
+      }
+      final started = await OverlayService.startAssistiveBall();
+      setState(() {
+        _isOverlayServiceRunning = started;
+        _canDrawOverlays = permitted;
+      });
+    } else {
+      await OverlayService.stopAssistiveBall();
+      setState(() => _isOverlayServiceRunning = false);
     }
   }
 
@@ -68,39 +97,112 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
-          // 1. Vault Owner Profile
-          _buildSectionHeader('VAULT PROFILE'),
+          // 1. Vault Security Shield Banner
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.darkCard,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.darkBorder),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppTheme.successColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.shield_outlined, color: AppTheme.successColor, size: 22),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '100% Local Device Storage',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textPrimary),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Zero cloud retention. Biometrics, IDs, and records are isolated in sandboxed SQLite storage.',
+                        style: TextStyle(fontSize: 11, color: AppTheme.textSecondary, height: 1.3),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // 2. Vault Owner Profile
+          _buildSectionHeader('PRIMARY CARDHOLDER PROFILE'),
           _buildSettingsCard([
             ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               leading: const Icon(Icons.person_outline, color: AppTheme.primaryColor),
               title: const Text('Primary Cardholder Name', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               subtitle: Text(
-                _ownerNameController.text.isEmpty ? 'Not set' : _ownerNameController.text,
+                _ownerNameController.text.isEmpty ? 'Not configured' : _ownerNameController.text,
                 style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
               ),
               trailing: TextButton(
                 onPressed: () => _showEditNameDialog(context),
-                child: const Text('Edit', style: TextStyle(color: AppTheme.primaryColor, fontSize: 12)),
+                child: const Text('Edit', style: TextStyle(color: AppTheme.primaryColor, fontSize: 12, fontWeight: FontWeight.w600)),
               ),
             ),
           ]),
 
           const SizedBox(height: 20),
 
-          // 2. Documents Folder
-          _buildSectionHeader('STORAGE & MONITORED FOLDER'),
+          // 3. Assistive Form Copilot & Overlay
+          _buildSectionHeader('ASSISTIVE FORM COPILOT (CHROME OVERLAY)'),
+          _buildSettingsCard([
+            SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              secondary: const Icon(Icons.bolt, color: AppTheme.primaryColor),
+              title: const Text('Floating Ball Over Chrome', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                _canDrawOverlays
+                    ? 'Floating ball active over external apps (Chrome, SBI, IRCTC).'
+                    : 'Requires permission to float over other apps like Chrome.',
+                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+              ),
+              value: _isOverlayServiceRunning,
+              onChanged: _toggleOverlayService,
+            ),
+            const Divider(color: AppTheme.darkBorder, height: 1),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              leading: const Icon(Icons.touch_app_outlined, color: AppTheme.accentColor),
+              title: const Text('Test Copilot Dialog Now', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Preview quick-copy values and file upload chips in-app.', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+              trailing: OutlinedButton(
+                onPressed: () => AssistiveBallDialog.show(context),
+                child: const Text('Preview', style: TextStyle(fontSize: 11)),
+              ),
+            ),
+          ]),
+
+          const SizedBox(height: 20),
+
+          // 4. Documents & Monitored Folder
+          _buildSectionHeader('STORAGE & MONITORED DOCUMENTS'),
           _buildSettingsCard([
             ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               leading: const Icon(Icons.folder_outlined, color: AppTheme.accentColor),
-              title: const Text('Scoped Document Folder', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              title: const Text('Monitored Folder', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 2),
                   Text(
-                    _folderPath ?? 'No folder selected',
+                    _folderPath ?? 'No folder selected yet',
                     style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -119,36 +221,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     setState(() => _folderPath = picked);
                   }
                 },
-                child: const Text('Browse', style: TextStyle(fontSize: 11)),
+                child: const Text('Change', style: TextStyle(fontSize: 11)),
               ),
             ),
-          ]),
-
-          const SizedBox(height: 20),
-
-          // 3. Assistive Ball & Copilot
-          _buildSectionHeader('ASSISTIVE FORM COPILOT'),
-          _buildSettingsCard([
+            const Divider(color: AppTheme.darkBorder, height: 1),
             ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              leading: const Icon(Icons.touch_app_outlined, color: AppTheme.primaryColor),
-              title: const Text('Test Assistive Ball', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-              subtitle: const Text(
-                'Opens the compact quick-copy and file upload dialog box.',
-                style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
-              ),
+              leading: const Icon(Icons.add_circle_outline, color: AppTheme.primaryColor),
+              title: const Text('Import Files Directly', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Select individual identity files (.pdf, .jpg, etc.) directly into vault.', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
               trailing: ElevatedButton(
-                onPressed: () => AssistiveBallDialog.show(context),
-                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6)),
-                child: const Text('Test', style: TextStyle(fontSize: 11)),
+                onPressed: () async {
+                  final files = await FolderSyncService.pickDocumentFiles();
+                  if (files.isNotEmpty && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Importing ${files.length} file(s)...')),
+                    );
+                    FolderSyncService.syncFiles(files).listen((p) {
+                      if (p.isCompleted && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(p.status)),
+                        );
+                      }
+                    });
+                  }
+                },
+                child: const Text('Import', style: TextStyle(fontSize: 11)),
               ),
             ),
           ]),
 
           const SizedBox(height: 20),
 
-          // 4. Free Gemini Vision Engine
-          _buildSectionHeader('FAST AI VISION ENGINE'),
+          // 5. Fast AI Vision Engine
+          _buildSectionHeader('FAST AI VISION OCR ENGINE'),
           _buildSettingsCard([
             Padding(
               padding: const EdgeInsets.all(16.0),
@@ -160,23 +266,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const Icon(Icons.bolt, color: AppTheme.primaryColor, size: 20),
                       const SizedBox(width: 8),
                       const Text(
-                        'Google Gemini 2.5 Flash API Key',
+                        'Google Gemini 2.5 Flash',
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
                       ),
                       const Spacer(),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: AppTheme.successColor.withValues(alpha: 0.15),
+                          color: _hasActiveKey
+                              ? AppTheme.successColor.withValues(alpha: 0.15)
+                              : AppTheme.warningColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Text('FREE TIER', style: TextStyle(color: AppTheme.successColor, fontSize: 9, fontWeight: FontWeight.w700)),
+                        child: Text(
+                          _hasActiveKey ? 'ACTIVE' : 'FREE TIER READY',
+                          style: TextStyle(
+                            color: _hasActiveKey ? AppTheme.successColor : AppTheme.warningColor,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Sub-second Indian document parsing and factual Q&A. Keys are stored locally on your device.',
+                    'High-speed structured field extraction with Verhoeff checksum validation. Configurable via .env or input below.',
                     style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                   ),
                   const SizedBox(height: 12),
@@ -208,15 +323,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // 5. Expiry Alarms
-          _buildSectionHeader('EXPIRY & RENEWAL RADAR'),
+          // 6. Expiry Radar Alarms
+          _buildSectionHeader('OFFLINE EXPIRY & RENEWAL RADAR'),
           _buildSettingsCard([
             ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               leading: const Icon(Icons.alarm, color: AppTheme.warningColor),
-              title: const Text('Local Alarm Notifications', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              title: const Text('Offline Local Alarms', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               subtitle: const Text(
-                'Fires offline Android alarms at 60, 30, 7, and 1 day before document expiry.',
+                'Fires offline Android alarms at 60, 30, 7, and 1 day before document expiration.',
                 style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
               ),
               trailing: OutlinedButton(
@@ -227,7 +342,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   );
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Test notification sent.')),
+                      const SnackBar(content: Text('Test notification dispatched.')),
                     );
                   }
                 },
@@ -238,30 +353,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // 6. Zero-Knowledge Architecture
-          _buildSectionHeader('SECURITY & ZERO-KNOWLEDGE ARCHITECTURE'),
+          // 7. Danger Zone
+          _buildSectionHeader('VAULT MAINTENANCE'),
           _buildSettingsCard([
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.lock_outline, color: AppTheme.textSecondary, size: 16),
-                      SizedBox(width: 8),
-                      Text(
-                        '100% Local Device Storage',
-                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textPrimary),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Your documents, biometrics, and database records remain strictly on your physical phone in a sandboxed SQLite vault. AI extraction uses an ephemeral zero-retention transit tunnel.',
-                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted, height: 1.5),
-                  ),
-                ],
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              leading: const Icon(Icons.delete_sweep_outlined, color: AppTheme.dangerColor),
+              title: const Text('Clear All Vault Data', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.dangerColor)),
+              subtitle: const Text('Erase all local document records and reset vault database.', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+              trailing: OutlinedButton(
+                style: OutlinedButton.styleFrom(side: const BorderSide(color: AppTheme.dangerColor)),
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: AppTheme.darkCard,
+                      title: const Text('Clear Vault Data?'),
+                      content: const Text('This will delete all indexed document records from your local database.'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerColor),
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Clear Data', style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirm == true) {
+                    await DatabaseService.instance.clearAllData();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('All vault records cleared.')),
+                      );
+                    }
+                  }
+                },
+                child: const Text('Clear', style: TextStyle(fontSize: 11, color: AppTheme.dangerColor)),
               ),
             ),
           ]),
@@ -308,7 +437,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Edit Cardholder Name'),
         content: TextField(
           controller: _ownerNameController,
-          decoration: const InputDecoration(hintText: 'Enter full name'),
+          decoration: const InputDecoration(hintText: 'Enter full name (e.g. Muneer Shaik)'),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),

@@ -51,9 +51,11 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   void _shareDocumentFile() async {
     final file = File(widget.document.filePath);
     if (await file.exists()) {
-      await Share.shareXFiles(
-        [XFile(widget.document.filePath)],
-        text: 'Document: ${widget.document.title}',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(widget.document.filePath)],
+          text: 'Document: ${widget.document.title}',
+        ),
       );
     } else {
       if (mounted) {

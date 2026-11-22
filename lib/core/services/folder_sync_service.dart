@@ -1,10 +1,12 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/document_field.dart';
 import '../../models/document_model.dart';
+import '../config/app_config.dart';
 import '../database/database_service.dart';
 import 'alert_service.dart';
 import 'person_resolution_engine.dart';
@@ -31,6 +33,7 @@ class SyncProgress {
 class FolderSyncService {
   static const String _prefFolderPath = 'vault_folder_path';
   static const _uuid = Uuid();
+  static const supportedExtensions = {'.pdf', '.png', '.jpg', '.jpeg', '.docx'};
 
   static Future<String?> getSelectedFolderPath() async {
     final prefs = await SharedPreferences.getInstance();
@@ -40,6 +43,33 @@ class FolderSyncService {
   static Future<void> setSelectedFolderPath(String path) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefFolderPath, path);
+  }
+
+  /// Permanent sandboxed storage location inside app directory
+  static Future<Directory> getPermanentVaultDirectory() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final vaultDir = Directory(p.join(appDir.path, 'vault_documents'));
+    if (!await vaultDir.exists()) {
+      await vaultDir.create(recursive: true);
+    }
+    return vaultDir;
+  }
+
+  /// Pick one or multiple files directly (.pdf, .png, .jpg, .jpeg, .docx)
+  /// Guaranteed to work on all modern Android versions (SAF-compliant)
+  static Future<List<File>> pickDocumentFiles() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg', 'docx'],
+    );
+    if (result.isNotEmpty) {
+      return result
+          .where((pf) => pf.path != null)
+          .map((pf) => File(pf.path!))
+          .where((f) => f.existsSync())
+          .toList();
+    }
+    return [];
   }
 
   /// Lets the user pick a folder via native directory picker and persists it.
@@ -70,7 +100,7 @@ class FolderSyncService {
     if (!await dir.exists()) {
       yield SyncProgress(
         status: 'Folder not found',
-        error: 'The folder at $targetPath does not exist.',
+        error: 'The folder at $targetPath is not directly accessible. Try "Select Files Directly".',
         isCompleted: true,
       );
       return;
@@ -78,19 +108,28 @@ class FolderSyncService {
 
     yield SyncProgress(status: 'Scanning folder for documents...');
 
-    final supportedExtensions = {'.pdf', '.png', '.jpg', '.jpeg', '.docx'};
-    final files = dir
-        .listSync(recursive: false)
-        .whereType<File>()
-        .where((file) {
-          final ext = p.extension(file.path).toLowerCase();
-          return supportedExtensions.contains(ext);
-        })
-        .toList();
+    List<File> files = [];
+    try {
+      files = dir
+          .listSync(recursive: false)
+          .whereType<File>()
+          .where((file) {
+            final ext = p.extension(file.path).toLowerCase();
+            return supportedExtensions.contains(ext);
+          })
+          .toList();
+    } catch (e) {
+      yield SyncProgress(
+        status: 'Scoped access restricted',
+        error: 'System restricted access to folder. Please use "Pick Files Directly".',
+        isCompleted: true,
+      );
+      return;
+    }
 
     if (files.isEmpty) {
       yield SyncProgress(
-        status: 'No document files found in folder.',
+        status: 'No document files found in folder (.pdf, .png, .jpg, .docx).',
         totalFiles: 0,
         processedFiles: 0,
         isCompleted: true,
@@ -98,16 +137,34 @@ class FolderSyncService {
       return;
     }
 
+    yield* syncFiles(files);
+  }
+
+  /// Imports and indexes a list of files into permanent vault storage
+  static Stream<SyncProgress> syncFiles(List<File> files) async* {
+    final apiKey = await AppConfig.getApiKey();
+    if (apiKey == null || apiKey.isEmpty) {
+      yield SyncProgress(
+        status: 'API Key Not Configured',
+        error: 'Please add your free Gemini API key in Settings or .env before scanning.',
+        isCompleted: true,
+      );
+      return;
+    }
+
     final db = DatabaseService.instance;
     final existingDocs = await db.getAllDocuments();
-    final existingPaths = existingDocs.map((d) => d.filePath).toSet();
+    final existingFileNames = existingDocs.map((d) => d.fileName.toLowerCase()).toSet();
 
-    // Filter files that are not yet in the vault
-    final newFiles = files.where((f) => !existingPaths.contains(f.path)).toList();
+    // Filter files that are not already indexed
+    final newFiles = files.where((f) {
+      final name = p.basename(f.path).toLowerCase();
+      return !existingFileNames.contains(name);
+    }).toList();
 
     if (newFiles.isEmpty) {
       yield SyncProgress(
-        status: 'All ${files.length} documents in folder are already up to date!',
+        status: 'All ${files.length} documents are already indexed and stored in vault!',
         totalFiles: files.length,
         processedFiles: files.length,
         isCompleted: true,
@@ -115,25 +172,32 @@ class FolderSyncService {
       return;
     }
 
+    final vaultDir = await getPermanentVaultDirectory();
     int processedCount = 0;
+
     for (final file in newFiles) {
-      final fileName = p.basename(file.path);
+      final originalName = p.basename(file.path);
       processedCount++;
 
       yield SyncProgress(
         totalFiles: newFiles.length,
         processedFiles: processedCount,
-        currentFileName: fileName,
-        status: 'Analyzing $fileName with Vision AI...',
+        currentFileName: originalName,
+        status: 'Analyzing $originalName with Vision AI...',
       );
 
       try {
-        // 1. Extract details via Vision AI
+        // Copy to permanent app storage to ensure 100% offline persistence
+        final safeBaseName = originalName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+        final permanentFilePath = p.join(vaultDir.path, '${DateTime.now().millisecondsSinceEpoch}_$safeBaseName');
+        final permanentFile = await file.copy(permanentFilePath);
+
+        // 1. Extract details via Vision AI using permanent file
         final extractResult = await VisionExtractorService.extractDocument(
-          filePath: file.path,
+          filePath: permanentFile.path,
         );
 
-        // 2. Resolve or create Person (Family member disambiguation)
+        // 2. Resolve or create Person with Indian Name Disambiguation
         final person = await PersonResolutionEngine.resolvePerson(
           holderName: extractResult.holderName,
           dob: extractResult.dob,
@@ -144,7 +208,7 @@ class FolderSyncService {
 
         // 3. Construct DocumentModel
         final docId = _uuid.v4();
-        final ext = p.extension(file.path).replaceAll('.', '').toLowerCase();
+        final ext = p.extension(permanentFile.path).replaceAll('.', '').toLowerCase();
 
         DateTime? issueDate;
         if (extractResult.issueDate != null) {
@@ -167,8 +231,8 @@ class FolderSyncService {
           idNumber: extractResult.idNumber,
           issueDate: issueDate,
           expiryDate: expiryDate,
-          filePath: file.path,
-          fileName: fileName,
+          filePath: permanentFile.path,
+          fileName: originalName,
           fileType: ext,
           rawText: extractResult.rawResponse,
           isVerified: extractResult.isChecksumValid,
@@ -203,7 +267,7 @@ class FolderSyncService {
         addField('Full Address', extractResult.address, 'address');
         addField('PIN Code', extractResult.pinCode, 'address');
 
-        // Extra fields
+        // Extra dynamic fields
         extractResult.extraFields.forEach((k, v) {
           addField(_formatFieldName(k), v, 'other');
         });
@@ -216,12 +280,11 @@ class FolderSyncService {
           await AlertService.instance.scheduleDocumentExpiryAlerts(document, person.name);
         }
       } catch (e) {
-        // Continue processing other files even if one fails
         yield SyncProgress(
           totalFiles: newFiles.length,
           processedFiles: processedCount,
-          currentFileName: fileName,
-          status: 'Error processing $fileName: $e',
+          currentFileName: originalName,
+          status: 'Error processing $originalName: $e',
           error: e.toString(),
         );
       }
@@ -230,7 +293,7 @@ class FolderSyncService {
     yield SyncProgress(
       totalFiles: newFiles.length,
       processedFiles: newFiles.length,
-      status: 'Synced ${newFiles.length} new document(s) successfully!',
+      status: 'Stored & indexed ${newFiles.length} document(s) permanently in vault!',
       isCompleted: true,
     );
   }

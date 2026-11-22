@@ -65,9 +65,11 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
   void _shareDocumentFile(DocumentModel doc) async {
     final file = File(doc.filePath);
     if (await file.exists()) {
-      await Share.shareXFiles(
-        [XFile(doc.filePath)],
-        text: 'Document: ${doc.title}',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(doc.filePath)],
+          text: 'Document: ${doc.title}',
+        ),
       );
     } else {
       if (mounted) {

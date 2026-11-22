@@ -1,8 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/config/app_config.dart';
 import '../../core/database/database_service.dart';
 import '../../core/services/folder_sync_service.dart';
+import '../../core/services/overlay_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/person.dart';
 import '../../main_navigation_shell.dart';
@@ -20,14 +24,37 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
   int _currentStep = 0;
 
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _apiKeyController = TextEditingController();
   String? _selectedFolderPath;
+  List<File> _selectedFiles = [];
   bool _isScanning = false;
   String _scanStatus = '';
+  bool _hasApiKey = false;
+  bool _overlayPermitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialState();
+  }
+
+  Future<void> _checkInitialState() async {
+    final key = await AppConfig.getApiKey();
+    final canOverlay = await OverlayService.canDrawOverlays();
+    if (mounted) {
+      setState(() {
+        _hasApiKey = key != null && key.isNotEmpty;
+        if (key != null) _apiKeyController.text = key;
+        _overlayPermitted = canOverlay;
+      });
+    }
+  }
 
   @override
   void dispose() {
     _pageController.dispose();
     _nameController.dispose();
+    _apiKeyController.dispose();
     super.dispose();
   }
 
@@ -36,8 +63,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
     await prefs.setBool('onboarding_completed', true);
     if (_nameController.text.trim().isNotEmpty) {
       await prefs.setString('vault_owner_name', _nameController.text.trim());
-      
-      // Ensure primary Person record exists
+
       final existing = await DatabaseService.instance.getAllPersons();
       if (existing.isEmpty) {
         await DatabaseService.instance.upsertPerson(
@@ -62,7 +88,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
   void _nextStep() {
     if (_currentStep < 3) {
       _pageController.nextPage(
-        duration: const Duration(milliseconds: 300),
+        duration: const Duration(milliseconds: 250),
         curve: Curves.easeInOut,
       );
       setState(() => _currentStep++);
@@ -104,7 +130,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
                   _buildStepName(),
-                  _buildStepFolder(),
+                  _buildStepDocumentsAndApiKey(),
                   _buildStepScan(),
                   _buildStepCopilotTest(),
                 ],
@@ -113,14 +139,14 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
 
             // Bottom Navigation Actions
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Row(
                 children: [
                   if (_currentStep > 0 && _currentStep < 3)
                     TextButton(
                       onPressed: () {
                         _pageController.previousPage(
-                          duration: const Duration(milliseconds: 300),
+                          duration: const Duration(milliseconds: 250),
                           curve: Curves.easeInOut,
                         );
                         setState(() => _currentStep--);
@@ -132,7 +158,13 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                     onPressed: () {
                       if (_currentStep == 0 && _nameController.text.trim().isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Please enter your name to proceed.')),
+                          const SnackBar(content: Text('Please enter your full name to proceed.')),
+                        );
+                        return;
+                      }
+                      if (_currentStep == 1 && !_hasApiKey && _apiKeyController.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please provide your free Gemini API key to proceed.')),
                         );
                         return;
                       }
@@ -156,12 +188,11 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
   Widget _buildStepName() {
     return Padding(
       padding: const EdgeInsets.all(28.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListView(
         children: [
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           const Text(
-            'Welcome to PrivDoc Vault',
+            'Primary Cardholder',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w700,
@@ -171,22 +202,44 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Enter your full name as it appears on your official identity cards. This acts as the anchor to cleanly separate your cards from family members.',
+            'Enter your full name as it appears on your official documents (Aadhaar, PAN, DL). This automatically distinguishes your documents from family members.',
             style: TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
           ),
-          const SizedBox(height: 36),
+          const SizedBox(height: 32),
           const Text(
             'PRIMARY CARDHOLDER NAME',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMuted, letterSpacing: 0.5),
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 0.6),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _nameController,
             textCapitalization: TextCapitalization.words,
-            style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.w500),
+            style: const TextStyle(fontSize: 15, color: Colors.white, fontWeight: FontWeight.w500),
             decoration: const InputDecoration(
-              hintText: 'e.g. Rahul Sharma',
+              hintText: 'e.g. Muneer Shaik or Rahul Sharma',
               prefixIcon: Icon(Icons.person_outline, color: AppTheme.textSecondary, size: 20),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppTheme.darkCard,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.darkBorder),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 16, color: AppTheme.accentColor),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Indian name variations (e.g. inverted "Shaik Muneer" vs "Muneer Shaik") are automatically resolved to your profile.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.4),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -194,16 +247,14 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
     );
   }
 
-  // STEP 2: Scoped Folder Selection
-  Widget _buildStepFolder() {
+  // STEP 2: Scoped Documents & API Key
+  Widget _buildStepDocumentsAndApiKey() {
     return Padding(
-      padding: const EdgeInsets.all(28.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.all(24.0),
+      child: ListView(
         children: [
-          const SizedBox(height: 24),
           const Text(
-            'Select Document Folder',
+            'Documents & Extraction',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w700,
@@ -211,17 +262,19 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
               letterSpacing: -0.5,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           const Text(
-            'Choose the folder on your device that contains your identity and policy files (.pdf, .png, .jpg, .docx). PrivDoc only monitors this single folder.',
-            style: TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
+            'Select your documents or choose a folder. Files are permanently preserved in your local vault.',
+            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
           ),
-          const SizedBox(height: 36),
+          const SizedBox(height: 20),
+
+          // API Key status / input
           Container(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: AppTheme.darkCard,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(color: AppTheme.darkBorder),
             ),
             child: Column(
@@ -229,36 +282,150 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.folder_outlined, color: AppTheme.primaryColor, size: 22),
-                    const SizedBox(width: 10),
-                    Expanded(
+                    const Icon(Icons.bolt, color: AppTheme.primaryColor, size: 18),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Gemini Vision AI Engine',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textPrimary),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _hasApiKey
+                            ? AppTheme.successColor.withValues(alpha: 0.15)
+                            : AppTheme.warningColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                       child: Text(
-                        _selectedFolderPath ?? 'No folder linked yet',
+                        _hasApiKey ? 'CONFIGURED' : 'FREE KEY REQUIRED',
                         style: TextStyle(
-                          fontSize: 13,
-                          color: _selectedFolderPath != null ? AppTheme.textPrimary : AppTheme.textMuted,
-                          fontWeight: FontWeight.w500,
+                          color: _hasApiKey ? AppTheme.successColor : AppTheme.warningColor,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
+                if (!_hasApiKey) ...[
+                  TextField(
+                    controller: _apiKeyController,
+                    obscureText: true,
+                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: Colors.white),
+                    decoration: const InputDecoration(
+                      hintText: 'Enter API Key (AIzaSy...)',
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    onChanged: (val) {
+                      if (val.trim().isNotEmpty) {
+                        AppConfig.setApiKey(val.trim());
+                        setState(() => _hasApiKey = true);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Get a free API key at aistudio.google.com. You can also place it in .env file.',
+                    style: TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                  ),
+                ] else
+                  const Text(
+                    'API key loaded from configuration. Sub-second zero-retention OCR ready.',
+                    style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                  ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          // File selection options
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.darkCard,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.darkBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'DOCUMENT SELECTION',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 0.5),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Supported: .pdf, .png, .jpg, .docx',
+                  style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 14),
+
+                // Option 1: Pick Files Directly (Primary & most reliable on Android)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final files = await FolderSyncService.pickDocumentFiles();
+                      if (files.isNotEmpty) {
+                        setState(() {
+                          _selectedFiles = files;
+                          _selectedFolderPath = null;
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.file_upload_outlined, size: 16),
+                    label: Text(
+                      _selectedFiles.isNotEmpty
+                          ? '${_selectedFiles.length} File(s) Selected'
+                          : 'Select Document Files Directly',
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Option 2: Pick Folder
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: () async {
                       final picked = await FolderSyncService.pickFolder();
                       if (picked != null) {
-                        setState(() => _selectedFolderPath = picked);
+                        setState(() {
+                          _selectedFolderPath = picked;
+                          _selectedFiles = [];
+                        });
                       }
                     },
                     icon: const Icon(Icons.folder_open, size: 16),
-                    label: Text(_selectedFolderPath == null ? 'Browse & Select Folder' : 'Change Folder'),
+                    label: Text(_selectedFolderPath != null ? 'Folder: ${p.basename(_selectedFolderPath!)}' : 'Or Select Monitored Folder'),
                   ),
                 ),
+
+                if (_selectedFiles.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  ..._selectedFiles.take(4).map((f) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check, size: 14, color: AppTheme.successColor),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            p.basename(f.path),
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )),
+                  if (_selectedFiles.length > 4)
+                    Text('+ ${_selectedFiles.length - 4} more files', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                ],
               ],
             ),
           ),
@@ -274,7 +441,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           const Text(
             'Initial Scan & Preparation',
             style: TextStyle(
@@ -286,12 +453,12 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'We will now index the documents in your folder, extract key fields, and organize them under your name and family profiles.',
+            'PrivDoc will now extract details, verify checksums, and permanently store the documents in your private SQLite vault.',
             style: TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
           ),
           const SizedBox(height: 36),
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: AppTheme.darkCard,
               borderRadius: BorderRadius.circular(12),
@@ -300,27 +467,33 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
             child: Column(
               children: [
                 Icon(
-                  _isScanning ? Icons.sync : Icons.check_circle_outline,
+                  _isScanning ? Icons.sync : Icons.shield_outlined,
                   color: _isScanning ? AppTheme.primaryColor : AppTheme.successColor,
-                  size: 40,
+                  size: 44,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 Text(
-                  _isScanning ? 'Syncing Documents...' : 'Ready to Index',
+                  _isScanning ? 'Extracting & Saving Vault...' : 'Ready to Index',
                   style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white, fontSize: 16),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Text(
-                  _scanStatus.isNotEmpty ? _scanStatus : 'Tap Start Scan to verify files in selected folder.',
+                  _scanStatus.isNotEmpty
+                      ? _scanStatus
+                      : (_selectedFiles.isNotEmpty
+                          ? '${_selectedFiles.length} file(s) selected for indexing.'
+                          : (_selectedFolderPath != null
+                              ? 'Folder linked. Ready to scan.'
+                              : 'Select files or folder in previous step.')),
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 if (!_isScanning)
                   ElevatedButton.icon(
                     onPressed: _startScan,
                     icon: const Icon(Icons.play_arrow, size: 16),
-                    label: const Text('Start Folder Scan'),
+                    label: const Text('Start Vault Extraction'),
                   ),
               ],
             ),
@@ -333,10 +506,14 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
   void _startScan() {
     setState(() {
       _isScanning = true;
-      _scanStatus = 'Scanning files...';
+      _scanStatus = 'Starting document indexing...';
     });
 
-    FolderSyncService.syncFolder(folderPath: _selectedFolderPath).listen(
+    final stream = _selectedFiles.isNotEmpty
+        ? FolderSyncService.syncFiles(_selectedFiles)
+        : FolderSyncService.syncFolder(folderPath: _selectedFolderPath);
+
+    stream.listen(
       (progress) {
         if (mounted) {
           setState(() {
@@ -362,10 +539,9 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
   Widget _buildStepCopilotTest() {
     return Padding(
       padding: const EdgeInsets.all(28.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListView(
         children: [
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           const Text(
             'Assistive Form Copilot',
             style: TextStyle(
@@ -377,16 +553,18 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'When enabled, a discreet assistive ball floats on the edge of your screen while using Chrome or banking portals. Tap it to test the quick-copy and file upload card now.',
+            'The assistive ball floats over Google Chrome, banking portals, and government websites. Tap it anytime to copy card numbers or pass upload files with 1 tap.',
             style: TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
           ),
-          const SizedBox(height: 36),
+          const SizedBox(height: 28),
+
+          // Ball Interactive Preview
           Center(
             child: GestureDetector(
               onTap: () => AssistiveBallDialog.show(context),
               child: Container(
-                width: 72,
-                height: 72,
+                width: 68,
+                height: 68,
                 decoration: BoxDecoration(
                   color: AppTheme.darkCard,
                   shape: BoxShape.circle,
@@ -399,15 +577,72 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                     ),
                   ],
                 ),
-                child: const Icon(Icons.touch_app, color: AppTheme.primaryColor, size: 30),
+                child: const Icon(Icons.bolt, color: AppTheme.primaryColor, size: 28),
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           const Center(
             child: Text(
-              'Tap the Assistive Ball above to test',
+              'Tap the Assistive Ball above to test the dialog',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Android System Overlay Permission Toggle
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.darkCard,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.darkBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.layers_outlined, color: AppTheme.primaryColor, size: 18),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Display Over Other Apps (Chrome)',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Allows the assistive ball to remain accessible while filling forms in Chrome.',
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      await OverlayService.requestOverlayPermission();
+                      final can = await OverlayService.canDrawOverlays();
+                      if (can) {
+                        await OverlayService.startAssistiveBall();
+                      }
+                      if (mounted) {
+                        setState(() => _overlayPermitted = can);
+                      }
+                    },
+                    icon: Icon(_overlayPermitted ? Icons.check : Icons.open_in_new, size: 14),
+                    label: Text(
+                      _overlayPermitted
+                          ? 'Overlay Active Over Other Apps'
+                          : 'Enable Floating Ball Permission',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

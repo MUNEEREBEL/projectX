@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'core/services/overlay_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/assistant/assistant_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
+import 'features/overlay/assistive_ball_dialog.dart';
 import 'features/overlay/assistive_ball_widget.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/vault/vault_screen.dart';
@@ -22,6 +24,17 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     AssistantScreen(),
     SettingsScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Register trigger from external floating ball service
+    OverlayService.registerCopilotTriggerCallback(() {
+      if (mounted) {
+        AssistiveBallDialog.show(context);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
