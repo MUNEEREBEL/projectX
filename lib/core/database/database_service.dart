@@ -22,7 +22,9 @@ class DatabaseService {
   Future<Database> _initDb() async {
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
+      if (databaseFactoryOrNull != databaseFactoryFfi) {
+        databaseFactory = databaseFactoryFfi;
+      }
     }
 
     String path;

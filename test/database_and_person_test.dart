@@ -9,7 +9,9 @@ import 'package:x/models/person.dart';
 void main() {
   setUpAll(() {
     sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+    if (databaseFactoryOrNull != databaseFactoryFfi) {
+      databaseFactory = databaseFactoryFfi;
+    }
   });
 
   group('Database & Person Disambiguation Tests', () {
