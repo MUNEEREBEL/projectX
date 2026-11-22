@@ -44,7 +44,7 @@ class FolderSyncService {
 
   /// Lets the user pick a folder via native directory picker and persists it.
   static Future<String?> pickFolder() async {
-    final result = await FilePicker.platform.getDirectoryPath(
+    final result = await FilePicker.getDirectoryPath(
       dialogTitle: 'Select your Documents Vault Folder',
     );
     if (result != null && result.isNotEmpty) {
