@@ -1,23 +1,31 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  static const Color primaryColor = Color(0xFF10B981); // Emerald Green
-  static const Color primaryDark = Color(0xFF059669);
-  static const Color accentColor = Color(0xFF3B82F6); // Blue
-  static const Color warningColor = Color(0xFFF59E0B); // Amber
-  static const Color dangerColor = Color(0xFFEF4444); // Red
-  static const Color successColor = Color(0xFF10B981);
-  static const Color darkBg = Color(0xFF0F172A); // Slate 900
-  static const Color darkCard = Color(0xFF1E293B); // Slate 800
-  static const Color darkSurface = Color(0xFF334155);
+  // Professional Executive Palette (Apple / 1Password / Linear aesthetic)
+  static const Color darkBg = Color(0xFF0C0E12); // Deep matte obsidian
+  static const Color darkCard = Color(0xFF16191F); // Clean structural card
+  static const Color darkCardSubtle = Color(0xFF1E222A);
+  static const Color darkBorder = Color(0xFF282D37); // Hairline border
+  static const Color darkBorderFocus = Color(0xFF3B82F6); // Refined cobalt
+
+  static const Color textPrimary = Color(0xFFF1F5F9);
+  static const Color textSecondary = Color(0xFF94A3B8);
+  static const Color textMuted = Color(0xFF64748B);
+
+  static const Color primaryColor = Color(0xFF2563EB); // Executive Cobalt
+  static const Color primaryMuted = Color(0xFF1D4ED8);
+  static const Color accentColor = Color(0xFF0EA5E9); // Slate Blue
+  static const Color warningColor = Color(0xFFD97706); // Warm Amber
+  static const Color dangerColor = Color(0xFFDC2626); // Muted Crimson
+  static const Color successColor = Color(0xFF16A34A); // Verified Forest Green
 
   static final List<Color> avatarColors = [
-    const Color(0xFF3B82F6), // Blue
-    const Color(0xFF10B981), // Emerald
-    const Color(0xFF8B5CF6), // Purple
-    const Color(0xFFF59E0B), // Amber
-    const Color(0xFFEC4899), // Pink
-    const Color(0xFF14B8A6), // Teal
+    const Color(0xFF2563EB), // Cobalt
+    const Color(0xFF059669), // Forest
+    const Color(0xFF7C3AED), // Indigo
+    const Color(0xFFD97706), // Amber
+    const Color(0xFFDB2777), // Berry
+    const Color(0xFF0891B2), // Cyan
   ];
 
   static ThemeData get darkTheme {
@@ -31,52 +39,90 @@ class AppTheme {
         secondary: accentColor,
         surface: darkCard,
         error: dangerColor,
+        onSurface: textPrimary,
       ),
+      fontFamily: 'Roboto',
       cardTheme: CardThemeData(
         color: darkCard,
         elevation: 0,
+        margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFF334155), width: 1),
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: darkBorder, width: 1),
         ),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: darkBg,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
-          color: Colors.white,
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          letterSpacing: -0.5,
+          color: textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.3,
         ),
+        iconTheme: IconThemeData(color: textPrimary, size: 20),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: darkCard,
-        indicatorColor: primaryColor.withValues(alpha: 0.2),
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        indicatorColor: primaryColor.withValues(alpha: 0.15),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return const TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 12);
+            return const TextStyle(
+              color: textPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              letterSpacing: -0.2,
+            );
           }
-          return const TextStyle(color: Colors.grey, fontSize: 12);
+          return const TextStyle(color: textMuted, fontSize: 12, letterSpacing: -0.2);
         }),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: darkCard,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF334155)),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: darkBorder),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF334155)),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: darkBorder),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: primaryColor, width: 2),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: darkBorderFocus, width: 1.5),
         ),
-        hintStyle: const TextStyle(color: Colors.grey),
+        hintStyle: const TextStyle(color: textMuted, fontSize: 13),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, letterSpacing: -0.2),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: darkBorder),
+          foregroundColor: textPrimary,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: darkCard,
+        selectedColor: primaryColor.withValues(alpha: 0.2),
+        side: const BorderSide(color: darkBorder, width: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        labelStyle: const TextStyle(color: textSecondary, fontSize: 12, fontWeight: FontWeight.w500),
       ),
     );
   }

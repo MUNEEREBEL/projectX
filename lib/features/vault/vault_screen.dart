@@ -33,7 +33,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Document Vault'),
+        title: const Text('All Documents'),
       ),
       body: Column(
         children: [
@@ -43,13 +43,14 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
             child: TextField(
               controller: _searchController,
               onChanged: (_) => setState(() {}),
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: const TextStyle(color: Colors.white, fontSize: 13),
               decoration: InputDecoration(
                 hintText: 'Search vault by title, type, or number...',
-                prefixIcon: const Icon(Icons.search, color: AppTheme.primaryColor),
+                prefixIcon: const Icon(Icons.search, size: 18, color: AppTheme.textMuted),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.grey),
+                        icon: const Icon(Icons.clear, size: 16, color: AppTheme.textMuted),
                         onPressed: () {
                           _searchController.clear();
                           setState(() {});
@@ -65,22 +66,22 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
             data: (persons) {
               if (persons.isEmpty) return const SizedBox.shrink();
               return SizedBox(
-                height: 40,
+                height: 38,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
-                    FilterChip(
-                      label: const Text('All Members'),
+                    ChoiceChip(
+                      label: const Text('All Family'),
                       selected: selectedPersonId == null,
                       onSelected: (_) => ref.read(selectedPersonIdProvider.notifier).state = null,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     ...persons.map((p) {
                       final isSelected = selectedPersonId == p.id;
                       return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
                           label: Text(p.name),
                           selected: isSelected,
                           onSelected: (_) {
@@ -97,11 +98,11 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
             error: (_, __) => const SizedBox.shrink(),
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
 
           // 3. Category Filter Chips
           SizedBox(
-            height: 38,
+            height: 34,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -117,6 +118,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
                     onSelected: (selected) {
                       if (selected) setState(() => _selectedCategory = cat);
                     },
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
                   ),
                 );
               },
@@ -149,15 +151,15 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
                 }).toList();
 
                 if (filtered.isEmpty) {
-                  return Center(
+                  return const Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.folder_off_outlined, size: 56, color: Colors.grey.shade600),
-                        const SizedBox(height: 12),
-                        const Text(
+                        Icon(Icons.folder_off_outlined, size: 40, color: AppTheme.textMuted),
+                        SizedBox(height: 8),
+                        Text(
                           'No documents match your filters',
-                          style: TextStyle(color: Colors.grey, fontSize: 15),
+                          style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                         ),
                       ],
                     ),
@@ -165,16 +167,16 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
                 }
 
                 return ListView.builder(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   itemCount: filtered.length,
                   itemBuilder: (context, index) {
                     final doc = filtered[index];
                     return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
+                      margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(
                         color: AppTheme.darkCard,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppTheme.darkSurface),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.darkBorder),
                       ),
                       child: ListTile(
                         onTap: () {
@@ -183,44 +185,51 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
                             MaterialPageRoute(builder: (_) => DocumentDetailScreen(document: doc)),
                           );
                         },
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                         leading: Container(
-                          width: 44,
-                          height: 44,
+                          width: 38,
+                          height: 38,
                           decoration: BoxDecoration(
-                            color: AppTheme.primaryColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(10),
+                            color: AppTheme.darkBg,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.darkBorder),
                           ),
-                          child: Icon(_getDocIcon(doc.docType), color: AppTheme.primaryColor, size: 22),
+                          child: Icon(_getDocIcon(doc.docType), color: AppTheme.primaryColor, size: 18),
                         ),
                         title: Text(
                           doc.title,
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                          style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textPrimary, fontSize: 13),
                         ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            const SizedBox(height: 2),
                             Text(
                               doc.idNumber ?? doc.category,
-                              style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                              style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontFamily: 'monospace'),
                             ),
-                            if (doc.expiryDate != null)
-                              Text(
-                                doc.isExpired ? '⚠️ Expired' : 'Expires in ${doc.daysUntilExpiry} days',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: doc.isExpired ? AppTheme.dangerColor : AppTheme.warningColor,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            const SizedBox(height: 2),
+                            Text(
+                              doc.expiryDate != null
+                                  ? (doc.isExpired ? 'Expired' : 'Expires in ${doc.daysUntilExpiry} days')
+                                  : 'Lifetime Validity (No Expiry)',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: doc.expiryDate != null
+                                    ? (doc.isExpired ? AppTheme.dangerColor : AppTheme.warningColor)
+                                    : AppTheme.textSecondary,
                               ),
+                            ),
                           ],
                         ),
-                        trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 12, color: AppTheme.textMuted),
                       ),
                     );
                   },
                 );
               },
-              loading: () => const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor)),
+              loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryColor)),
               error: (err, _) => Center(child: Text('Error: $err', style: const TextStyle(color: Colors.red))),
             ),
           ),

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
@@ -149,7 +150,24 @@ For dates, always format as YYYY-MM-DD where possible.
 
     List<Part> contentParts = [];
 
-    if (ext == 'pdf') {
+    if (ext == 'docx') {
+      // DOCX handling: extract word/document.xml from zip archive
+      final bytes = await file.readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+      String docxText = '';
+      for (final archiveFile in archive) {
+        if (archiveFile.name == 'word/document.xml') {
+          final xmlStr = utf8.decode(archiveFile.content, allowMalformed: true);
+          // Extract text between xml tags
+          docxText = xmlStr.replaceAll(RegExp(r'<w:p[ >]'), '\n')
+                           .replaceAll(RegExp(r'<[^>]+>'), ' ')
+                           .replaceAll(RegExp(r'\s+'), ' ')
+                           .trim();
+          break;
+        }
+      }
+      contentParts.add(TextPart('$systemPrompt\n\nWord Document (.docx) text content:\n$docxText'));
+    } else if (ext == 'pdf') {
       // PDF handling: read text from PDF
       final bytes = await file.readAsBytes();
       final document = PdfDocument(inputBytes: bytes);

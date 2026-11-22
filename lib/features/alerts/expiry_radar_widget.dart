@@ -16,37 +16,21 @@ class ExpiryRadarWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     if (expiringDocs.isEmpty) {
       return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: AppTheme.darkCard,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppTheme.darkSurface),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppTheme.darkBorder),
         ),
-        child: Row(
+        child: const Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.successColor.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.check_circle_outline, color: AppTheme.successColor, size: 24),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'All Documents Active',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
-                  ),
-                  Text(
-                    'No licenses, insurance, or passports expiring soon.',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ],
+            Icon(Icons.shield_outlined, color: AppTheme.successColor, size: 18),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'All document policies and licenses are active.',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.w500),
               ),
             ),
           ],
@@ -61,29 +45,36 @@ class ExpiryRadarWidget extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
-              const Icon(Icons.radar, color: AppTheme.warningColor, size: 20),
-              const SizedBox(width: 8),
               const Text(
-                'Renewal & Expiry Radar',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                'RENEWAL RADAR',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.6,
+                  color: AppTheme.textMuted,
+                ),
               ),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppTheme.warningColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
+                  color: AppTheme.warningColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '${expiringDocs.length} Action Needed',
-                  style: const TextStyle(color: AppTheme.warningColor, fontSize: 11, fontWeight: FontWeight.bold),
+                  '${expiringDocs.length} Action Required',
+                  style: const TextStyle(
+                    color: AppTheme.warningColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
         ),
         SizedBox(
-          height: 120,
+          height: 105,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -93,20 +84,18 @@ class ExpiryRadarWidget extends StatelessWidget {
               final days = doc.daysUntilExpiry ?? 0;
               final isExpired = doc.isExpired;
 
-              final Color statusColor = isExpired
-                  ? AppTheme.dangerColor
-                  : (days < 30 ? AppTheme.warningColor : AppTheme.accentColor);
+              final Color accent = isExpired ? AppTheme.dangerColor : AppTheme.warningColor;
 
               return GestureDetector(
                 onTap: () => onDocTap(doc),
                 child: Container(
-                  width: 240,
-                  margin: const EdgeInsets.only(right: 12),
-                  padding: const EdgeInsets.all(14),
+                  width: 230,
+                  margin: const EdgeInsets.only(right: 10),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: AppTheme.darkCard,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: statusColor.withValues(alpha: 0.5), width: 1.5),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: accent.withValues(alpha: 0.4), width: 1),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,31 +103,26 @@ class ExpiryRadarWidget extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Icon(
-                            isExpired ? Icons.warning : Icons.alarm,
-                            color: statusColor,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: statusColor.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(6),
+                              color: accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              isExpired ? 'EXPIRED' : 'In $days Days',
+                              isExpired ? 'EXPIRED' : '$days DAYS LEFT',
                               style: TextStyle(
-                                color: statusColor,
+                                color: accent,
                                 fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.3,
                               ),
                             ),
                           ),
                           const Spacer(),
                           Text(
                             doc.docType.replaceAll('_', ' '),
-                            style: TextStyle(color: Colors.grey.shade400, fontSize: 10),
+                            style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w500),
                           ),
                         ],
                       ),
@@ -147,16 +131,17 @@ class ExpiryRadarWidget extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                          color: AppTheme.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
                         ),
                       ),
                       Text(
                         'Expiry: ${_formatDate(doc.expiryDate!)}',
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
+                        style: const TextStyle(
+                          color: AppTheme.textSecondary,
                           fontSize: 11,
+                          fontFamily: 'monospace',
                         ),
                       ),
                     ],
