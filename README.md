@@ -1,20 +1,30 @@
-# Project X
+# PrivDoc AI (India-First Smart Document Assistant)
 
-Project X is an offline document vault for Android. It indexes files selected from device storage, extracts text and structured fields locally, stores the result in SQLite, and answers questions only from stored records.
+PrivDoc AI is a local-first, zero-knowledge document vault, renewal radar, and form-filling copilot.
 
-## Runtime behavior
+---
 
-- No bundled personal document catalog or seeded database.
-- PDF/text extraction and Android OCR run locally.
-- Unknown values are rejected instead of invented.
-- SQLite is the source of truth; the in-memory list is only a UI projection.
-- The selected synthesis model is Qwen2.5 1.5B Instruct Q4_K_M. Its GGUF stays outside the APK under the app model directory. If it is absent, grounded field retrieval remains active.
+## Key Features
 
-## Build
+1. **Scoped Folder Sync Only**:
+   - Works strictly with your selected documents folder (`.pdf`, `.docx`, `.png`, `.jpg`, `.jpeg`).
+   - No broad device storage scanning.
 
-```powershell
-flutter pub get
-flutter build apk --release --split-per-abi
-```
+2. **State-of-the-Art Indian Document Recognition**:
+   - Powered by Gemini 2.5 Flash Vision (Free tier: fast, sub-second extraction).
+   - Extracts structured JSON for **Aadhaar, PAN, Driving License, Passport, Vehicle RC, Vehicle Insurance, Health Insurance, and Voter ID**.
+   - Built-in mathematical validation: Verhoeff algorithm for Aadhaar, PAN status check, Driving License format verification, and Passport MRZ check.
 
-The Android build targets `arm64-v8a` and uses the native llama.cpp shim when the optional GGUF model is present.
+3. **Family Profiles & Multi-Person Disambiguation**:
+   - Automatically clusters mixed family documents in a single folder into individual profiles (Self, Spouse, Father, Mother, etc.) using normalized name + DOB matching.
+
+4. **100% Offline Local Expiry Radar**:
+   - Background alarms via Android AlarmManager at 60, 30, 7, and 1 day prior to expiry.
+   - Dashboard renewal carousel with live countdowns.
+
+5. **Screen Copilot & 1-Tap Form Filling**:
+   - Floating drawer with fast 2-letter search (`pan`, `dl`, `ifsc`, `address`).
+   - 1-tap copy chips to fill government, banking, and application forms quickly without clutter.
+
+6. **Fast Natural Language AI Assistant**:
+   - Ask questions over verified local documents: *"When is my car insurance expiring?"*, *"What is my PAN?"*.
