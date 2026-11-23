@@ -38,6 +38,15 @@ class DatabaseService {
     return await openDatabase(
       path,
       version: 1,
+      onOpen: (db) async {
+        try {
+          await db.execute('''
+            UPDATE documents 
+            SET title = SUBSTR(title, INSTR(title, ' - ') + 3)
+            WHERE title LIKE '% - %' AND (title LIKE 'Primary Cardholder - %' OR title LIKE 'Primary User - %');
+          ''');
+        } catch (_) {}
+      },
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE persons (
@@ -233,6 +242,23 @@ class DatabaseService {
       batch.insert('alerts', alert.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
+  }
+
+  Future<void> cleanLegacyTitlesAndOwner(String realOwnerName) async {
+    final db = await database;
+    try {
+      await db.execute('''
+        UPDATE persons SET name = ? WHERE name = 'Primary Cardholder' OR name = 'Primary User';
+      ''', [realOwnerName]);
+      await db.execute('''
+        UPDATE document_fields SET field_value = ? WHERE field_name = 'Full Name' AND (field_value = 'Primary Cardholder' OR field_value = 'Primary User');
+      ''', [realOwnerName]);
+      await db.execute('''
+        UPDATE documents 
+        SET title = SUBSTR(title, INSTR(title, ' - ') + 3)
+        WHERE title LIKE '% - %' AND (title LIKE 'Primary Cardholder - %' OR title LIKE 'Primary User - %' OR title LIKE '$realOwnerName - %');
+      ''');
+    } catch (_) {}
   }
 
   Future<void> clearAllData() async {

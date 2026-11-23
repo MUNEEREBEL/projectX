@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/database/database_service.dart';
 import '../../core/providers/vault_provider.dart';
 import '../../core/services/folder_sync_service.dart';
 import '../../core/theme/app_theme.dart';
@@ -29,8 +30,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Future<void> _loadOwnerName() async {
     final prefs = await SharedPreferences.getInstance();
     final name = prefs.getString('vault_owner_name');
-    if (name != null && mounted) {
-      setState(() => _ownerName = name);
+    if (name != null && name.trim().isNotEmpty && name.trim() != 'Primary Cardholder') {
+      await DatabaseService.instance.cleanLegacyTitlesAndOwner(name.trim());
+      if (mounted) {
+        setState(() => _ownerName = name.trim());
+      }
     }
   }
 

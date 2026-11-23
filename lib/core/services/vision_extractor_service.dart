@@ -13,6 +13,7 @@ class ExtractionResult {
   final String docType;
   final String category;
   final String holderName;
+  final String? documentTitle;
   final String? relationName;
   final String? relationType;
   final String? idNumber;
@@ -30,6 +31,7 @@ class ExtractionResult {
     required this.docType,
     required this.category,
     required this.holderName,
+    this.documentTitle,
     this.relationName,
     this.relationType,
     this.idNumber,
@@ -49,6 +51,7 @@ class ExtractionResult {
       'doc_type': docType,
       'category': category,
       'holder_name': holderName,
+      'document_title': documentTitle,
       'relation_name': relationName,
       'relation_type': relationType,
       'id_number': idNumber,
@@ -113,7 +116,7 @@ class VisionExtractorService {
         : 'Unknown';
 
     final systemPrompt = '''
-You are an expert Indian Government Document & Certificate Verification Engine.
+You are an expert Indian Government Document, Certificate & Academic Verification Engine.
 Analyze this document image/text and extract all structured fields into JSON.
 
 CRITICAL EXTRACTION & ACCURACY RULES:
@@ -121,13 +124,42 @@ CRITICAL EXTRACTION & ACCURACY RULES:
    The primary user of this vault is "$cardholderAnchor".
    - Official Indian documents frequently use inverted naming (e.g. "Shaik Muneer" vs "Muneer Shaik").
    - DO NOT hallucinate characters or misread scan artifacts. For example, never misread "Muneer" as "Munfeer". If the document belongs to the cardholder, use the verified spelling "$cardholderAnchor".
-2. ABSOLUTE RULE FOR GOVERNMENT CERTIFICATES (EWS, Caste, Income, Domicile):
-   - The government officer who signed, verified, or issued the certificate (e.g. Tahsildar, Revenue Officer, Sub-Divisional Magistrate / SDM, Revenue Divisional Officer / RDO, District Collector, Registrar) is the ISSUING AUTHORITY, NOT the applicant's father!
-   - NEVER place the signing officer or Tahsildar in "relation_name"! Put them in "issuing_authority".
-   - "relation_name" MUST strictly be the cardholder's actual parent or spouse, explicitly designated with "S/o", "D/o", "W/o", "C/o", "Son of", "Daughter of", or "Father's Name". If none is specified, set "relation_name" to null.
-3. CERTIFICATE NUMBERS & IDENTIFIERS:
-   - For EWS, Caste, Income, Marksheet, or RC, put the official Certificate Number / Application No / Hall Ticket No / Reg No into "id_number".
-4. DATES: Always format dates as YYYY-MM-DD.
+
+2. FATHER / PARENT / RELATION NAME DETECTION:
+   - On Certificates (EWS, Caste, Income, Domicile):
+     The document almost always states:
+     "This is to certify that Shri/Kumari [APPLICANT NAME] son/daughter/ward of Shri [FATHER NAME]..."
+     Or uses "S/o", "D/o", "W/o", "C/o", "Father's Name".
+     The person following "son of", "daughter of", "S/o", "D/o", "Father's Name" is the FATHER'S NAME.
+     Set "relation_name" to this name, and "relation_type" to "Father".
+   - On Marksheets:
+     Extract the name explicitly listed under "Father's Name", "Father Name", "Parent's Name", or "Guardian's Name".
+   - ABSOLUTE PROHIBITION:
+     The government officer who signed or issued the certificate (e.g. Tahsildar, Revenue Officer, SDM, Revenue Divisional Officer, District Collector, Registrar, Controller of Examinations) is the ISSUING AUTHORITY, NEVER the father!
+     NEVER place the signing officer or Tahsildar in "relation_name"! Put them in "issuing_authority".
+
+3. EXPIRY DATE & VALIDITY RULES (CRITICAL):
+   - EWS CERTIFICATE: In India, an EWS Certificate is strictly valid for ONE financial year only! Look for "Valid for the year: YYYY-YYYY" or "Financial Year: YYYY-YYYY".
+     If it states "Valid for the year 2023-2024", the certificate EXPIRES on "2024-03-31".
+     If it states "Valid for the year 2024-2025", the certificate EXPIRES on "2025-03-31".
+     IT IS NEVER LIFETIME! Always calculate the expiry_date as the March 31 end of that valid financial year.
+   - INCOME CERTIFICATE: Valid for 1 financial year (expires on March 31 of that financial year).
+   - DRIVING LICENSE: Extract "NT Valid Till" or "Transport Valid Till".
+   - VEHICLE INSURANCE: Extract the policy end / expiry date.
+   - VEHICLE RC: Extract "Fitness Valid Upto" or "Regn Valid Upto".
+   - PASSPORT: Extract "Date of Expiry".
+   - NON-EXPIRING: Aadhaar, PAN, Caste Certificate, Marksheets, Degree Certificates, and Birth Certificates do NOT expire. Set "expiry_date": null.
+
+4. ACADEMIC MARKSHEETS & CERTIFICATES:
+   - Extract "document_title" properly (e.g. "Class 10th Marksheet", "Class 12th Marksheet", "B.Tech Grade Sheet", "Degree Certificate").
+   - Extract "sgpa" (Semester Grade Point Average, e.g. "8.45").
+   - Extract "cgpa" (Cumulative Grade Point Average, e.g. "8.12").
+   - Extract "percentage" (e.g. "85.6%").
+   - Extract "total_marks" (e.g. "850/1000").
+   - Extract "roll_number" / "hall_ticket_no" / "registration_number".
+   - Extract "institution_name" (School/College/Institute name).
+   - Extract "board_or_university" (e.g. CBSE, ICSE, State Board, JNTU, Anna University).
+   - Extract "passing_year" (e.g. "2022").
 
 Supported document types:
 - EWS_CERTIFICATE (Economically Weaker Section Certificate)
@@ -159,25 +191,32 @@ Output MUST strictly follow this JSON schema:
 {
   "doc_type": "string",
   "category": "string",
-  "holder_name": "string (Full Name of the cardholder/applicant)",
+  "document_title": "string (Clean, proper title: e.g. 'PAN Card', 'Class 10th Marksheet', 'Class 12th Marksheet', 'B.Tech Grade Sheet', 'Income Certificate', 'EWS Certificate', 'Driving License', 'Vehicle RC')",
+  "holder_name": "string (Full Name of the cardholder/applicant/student)",
   "relation_name": "string or null (ONLY actual Father/Husband/Spouse name. NEVER the Tahsildar or officer)",
   "relation_type": "string or null ('Father', 'Husband', 'Spouse', 'Mother')",
-  "id_number": "string or null (Certificate number, Aadhaar, PAN, DL, Passport, RC number)",
+  "id_number": "string or null (Certificate number, Aadhaar, PAN, DL, Passport, Roll Number, RC number)",
   "dob": "string or null (YYYY-MM-DD format)",
   "gender": "string or null ('Male', 'Female', 'Other')",
   "issue_date": "string or null (YYYY-MM-DD)",
-  "expiry_date": "string or null (YYYY-MM-DD, e.g. valid financial year end, license validity, insurance expiry)",
+  "expiry_date": "string or null (YYYY-MM-DD, e.g. valid financial year end 2024-03-31 for EWS 2023-2024, license validity, insurance expiry)",
   "address": "string or null (complete address)",
   "pin_code": "string or null (6-digit PIN code)",
   "extra_fields": {
+    "sgpa": "string or null (Semester Grade Point Average)",
+    "cgpa": "string or null (Cumulative Grade Point Average)",
+    "percentage": "string or null",
+    "total_marks": "string or null",
+    "roll_number": "string or null",
+    "institution_name": "string or null",
+    "board_or_university": "string or null",
+    "passing_year": "string or null",
     "issuing_authority": "string or null (e.g. Tahsildar, Revenue Officer, SDM)",
     "issuing_district_or_state": "string or null",
-    "financial_year": "string or null (e.g. 2024-2025)",
-    "valid_year": "string or null (e.g. 2025-2026)",
+    "financial_year": "string or null (e.g. 2023-2024)",
+    "valid_year": "string or null (e.g. 2023-2024)",
     "sub_caste_or_category": "string or null",
-    "annual_family_income": "string or null",
-    "board_or_university": "string or null",
-    "total_marks_or_cgpa": "string or null"
+    "annual_family_income": "string or null"
   }
 }
 ''';
@@ -218,20 +257,20 @@ Output MUST strictly follow this JSON schema:
       Uint8List uploadBytes = bytes;
       String mimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
 
-      // Only downsample if file size is large (> 400KB) to avoid unnecessary CPU decoding
-      if (bytes.length > 400 * 1024) {
+      // Only downsample if file size is very large (> 3.5MB) to avoid CPU waste and keep fine print legible
+      if (bytes.length > 3500 * 1024) {
         try {
           final decoded = img.decodeImage(bytes);
           if (decoded != null) {
             img.Image targetImg = decoded;
-            if (decoded.width > 1024 || decoded.height > 1024) {
+            if (decoded.width > 1800 || decoded.height > 1800) {
               if (decoded.width > decoded.height) {
-                targetImg = img.copyResize(decoded, width: 1024);
+                targetImg = img.copyResize(decoded, width: 1800);
               } else {
-                targetImg = img.copyResize(decoded, height: 1024);
+                targetImg = img.copyResize(decoded, height: 1800);
               }
             }
-            uploadBytes = Uint8List.fromList(img.encodeJpg(targetImg, quality: 70));
+            uploadBytes = Uint8List.fromList(img.encodeJpg(targetImg, quality: 85));
             mimeType = 'image/jpeg';
           }
         } catch (_) {
@@ -314,13 +353,14 @@ Output MUST strictly follow this JSON schema:
       final docType = (data['doc_type'] as String?)?.toUpperCase() ?? 'OTHER';
       final category = (data['category'] as String?) ?? 'Identity';
       final holderName = (data['holder_name'] as String?)?.trim() ?? 'Unknown';
+      final documentTitle = (data['document_title'] as String?)?.trim();
       final relationName = data['relation_name'] as String?;
       final relationType = data['relation_type'] as String?;
       final idNumber = (data['id_number'] as String?)?.trim();
       final dob = data['dob'] as String?;
       final gender = data['gender'] as String?;
       final issueDate = data['issue_date'] as String?;
-      final expiryDate = data['expiry_date'] as String?;
+      String? expiryDate = data['expiry_date'] as String?;
       final address = data['address'] as String?;
       final pinCode = data['pin_code'] as String?;
       
@@ -329,6 +369,28 @@ Output MUST strictly follow this JSON schema:
         (data['extra_fields'] as Map).forEach((k, v) {
           if (v != null) extraFields[k.toString()] = v.toString();
         });
+      }
+
+      // Discard "lifetime" text for expiry
+      if (expiryDate != null && (expiryDate.toLowerCase().contains('lifetime') || expiryDate.trim().isEmpty || expiryDate.toLowerCase() == 'null')) {
+        expiryDate = null;
+      }
+
+      // Enforce Indian validity rules for EWS and Income certificates (valid until March 31)
+      if (docType == 'EWS_CERTIFICATE' || extraFields['valid_year'] != null || extraFields['financial_year'] != null) {
+        final yearStr = extraFields['valid_year'] ?? extraFields['financial_year'] ?? '';
+        final yearMatch = RegExp(r'(20\d{2})[-/](20\d{2}|\d{2})').firstMatch(yearStr);
+        if (yearMatch != null) {
+          String endYearStr = yearMatch.group(2)!;
+          if (endYearStr.length == 2) endYearStr = '20$endYearStr';
+          expiryDate = '$endYearStr-03-31';
+        } else {
+          final singleYearMatch = RegExp(r'(20\d{2})').firstMatch(yearStr);
+          if (singleYearMatch != null) {
+            final y = singleYearMatch.group(1)!;
+            expiryDate = '$y-03-31';
+          }
+        }
       }
 
       // Checksum & format verification
@@ -351,6 +413,7 @@ Output MUST strictly follow this JSON schema:
         docType: docType,
         category: category,
         holderName: holderName,
+        documentTitle: documentTitle,
         relationName: relationName,
         relationType: relationType,
         idNumber: idNumber,

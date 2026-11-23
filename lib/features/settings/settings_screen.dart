@@ -6,6 +6,7 @@ import '../../core/services/alert_service.dart';
 import '../../core/services/folder_sync_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/glass_card.dart';
+import '../../models/person.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -56,11 +57,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _saveOwnerName() async {
+    final newName = _ownerNameController.text.trim();
+    if (newName.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('vault_owner_name', _ownerNameController.text.trim());
+    await prefs.setString('vault_owner_name', newName);
+
+    // Also update primary person in SQLite database
+    final persons = await DatabaseService.instance.getAllPersons();
+    if (persons.isNotEmpty) {
+      final primary = persons.first;
+      await DatabaseService.instance.upsertPerson(
+        Person(
+          id: primary.id,
+          name: newName,
+          relationship: primary.relationship,
+          avatarColorIndex: primary.avatarColorIndex,
+        ),
+      );
+    }
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Primary cardholder name updated.')),
+        const SnackBar(content: Text('Cardholder name updated across vault.')),
       );
     }
   }

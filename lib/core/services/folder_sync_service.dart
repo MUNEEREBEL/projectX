@@ -264,9 +264,13 @@ class FolderSyncService {
     // Ensure at least 1 person exists for initial ownership
     final persons = await db.getAllPersons();
     String defaultPersonId;
-    String ownerName = 'Primary Cardholder';
     final prefs = await SharedPreferences.getInstance();
-    ownerName = prefs.getString('vault_owner_name') ?? 'Primary Cardholder';
+    final storedName = prefs.getString('vault_owner_name');
+
+    // Prioritize stored name over generic placeholders
+    String ownerName = (storedName != null && storedName.trim().isNotEmpty && storedName.trim() != 'Primary Cardholder')
+        ? storedName.trim()
+        : (persons.isNotEmpty && persons.first.name != 'Primary Cardholder' ? persons.first.name : 'Primary User');
 
     if (persons.isEmpty) {
       defaultPersonId = _uuid.v4();
@@ -278,7 +282,18 @@ class FolderSyncService {
       ));
     } else {
       defaultPersonId = persons.first.id;
-      ownerName = persons.first.name;
+      if ((persons.first.name == 'Primary Cardholder' || persons.first.name == 'Primary User') &&
+          ownerName != 'Primary Cardholder' &&
+          ownerName != 'Primary User') {
+        await db.upsertPerson(Person(
+          id: defaultPersonId,
+          name: ownerName,
+          relationship: persons.first.relationship,
+          avatarColorIndex: persons.first.avatarColorIndex,
+        ));
+      } else {
+        ownerName = persons.first.name;
+      }
     }
 
     // 1. INSTANT LOCAL PERSISTENCE: Save all documents to SQLite immediately!
@@ -307,7 +322,7 @@ class FolderSyncService {
         personId: defaultPersonId,
         docType: guessedType,
         category: _categoryForDocType(guessedType),
-        title: '$ownerName - ${_formatDocType(guessedType)}',
+        title: _formatDocType(guessedType),
         filePath: permanentFile.path,
         fileName: cleanName,
         fileType: ext,
@@ -384,12 +399,16 @@ class FolderSyncService {
             expiryDate = DateTime.tryParse(extractResult.expiryDate!);
           }
 
+          final cleanTitle = (extractResult.documentTitle != null && extractResult.documentTitle!.trim().isNotEmpty)
+              ? extractResult.documentTitle!.trim()
+              : _formatDocType(extractResult.docType);
+
           final updatedDoc = DocumentModel(
             id: item.doc.id,
             personId: person.id,
             docType: extractResult.docType,
             category: extractResult.category,
-            title: '${person.name} - ${_formatDocType(extractResult.docType)}',
+            title: cleanTitle,
             idNumber: extractResult.idNumber,
             issueDate: issueDate,
             expiryDate: expiryDate,
@@ -478,6 +497,8 @@ class FolderSyncService {
 
   static String _guessDocTypeFromFilename(String name) {
     final lower = name.toLowerCase();
+    if (lower.contains('10th') || lower.contains('ssc') || lower.contains('class_10') || lower.contains('class 10')) return 'CLASS_10_MARKSHEET';
+    if (lower.contains('12th') || lower.contains('hsc') || lower.contains('intermediate') || lower.contains('class_12') || lower.contains('class 12')) return 'CLASS_12_MARKSHEET';
     if (lower.contains('aadhaar') || lower.contains('aadhar') || lower.contains('uidai')) return 'AADHAAR';
     if (lower.contains('pan') || lower.contains('nsdl') || lower.contains('uti')) return 'PAN';
     if (lower.contains('dl') || lower.contains('driving') || lower.contains('license')) return 'DRIVING_LICENSE';
@@ -514,6 +535,8 @@ class FolderSyncService {
       case 'DOMICILE_CERTIFICATE':
         return 'Government';
       case 'MARKSHEET':
+      case 'CLASS_10_MARKSHEET':
+      case 'CLASS_12_MARKSHEET':
         return 'Education';
       default:
         return 'Other';
@@ -522,6 +545,8 @@ class FolderSyncService {
 
   static String _formatDocType(String type) {
     switch (type.toUpperCase()) {
+      case 'CLASS_10_MARKSHEET': return 'Class 10th Marksheet';
+      case 'CLASS_12_MARKSHEET': return 'Class 12th Marksheet';
       case 'AADHAAR': return 'Aadhaar Card';
       case 'PAN': return 'PAN Card';
       case 'DRIVING_LICENSE': return 'Driving License';

@@ -350,8 +350,9 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
             width: double.infinity,
             height: 50,
             child: ElevatedButton(
-              onPressed: () {
-                if (_nameController.text.trim().isEmpty) {
+              onPressed: () async {
+                final enteredName = _nameController.text.trim();
+                if (enteredName.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Please enter your full name to proceed.')),
                   );
@@ -363,6 +364,37 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                   );
                   return;
                 }
+
+                // Immediately save owner name and API key to preferences
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setString('vault_owner_name', enteredName);
+                if (_apiKeyController.text.trim().isNotEmpty) {
+                  await AppConfig.setApiKey(_apiKeyController.text.trim());
+                }
+
+                // Ensure Person record in SQLite has user's actual name right now
+                final persons = await DatabaseService.instance.getAllPersons();
+                if (persons.isEmpty) {
+                  await DatabaseService.instance.upsertPerson(
+                    Person(
+                      id: const Uuid().v4(),
+                      name: enteredName,
+                      relationship: 'Self',
+                      avatarColorIndex: 0,
+                    ),
+                  );
+                } else {
+                  final primary = persons.first;
+                  await DatabaseService.instance.upsertPerson(
+                    Person(
+                      id: primary.id,
+                      name: enteredName,
+                      relationship: primary.relationship,
+                      avatarColorIndex: primary.avatarColorIndex,
+                    ),
+                  );
+                }
+
                 _goToStep(1);
               },
               child: const Text('Continue to Folder Selection', style: TextStyle(fontWeight: FontWeight.w600)),

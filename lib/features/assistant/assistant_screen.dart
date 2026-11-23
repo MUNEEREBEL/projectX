@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../models/document_model.dart';
 import '../../core/services/qa_assistant_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/glass_card.dart';
+import '../vault/document_detail_screen.dart';
 
 class ChatMessage {
   final String text;
   final bool isUser;
   final List<String> copyableValues;
+  final List<DocumentModel> referenceDocuments;
 
   ChatMessage({
     required this.text,
     required this.isUser,
     this.copyableValues = const [],
+    this.referenceDocuments = const [],
   });
 }
 
@@ -59,6 +63,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
             text: response.answer,
             isUser: false,
             copyableValues: response.copyableValues,
+            referenceDocuments: response.referenceDocuments,
           ));
           _isLoading = false;
         });
@@ -208,6 +213,62 @@ class _AssistantScreenState extends State<AssistantScreen> {
                                                       color: AppTheme.textPrimary,
                                                     ),
                                                   ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ],
+                                    if (msg.referenceDocuments.isNotEmpty) ...[
+                                      const SizedBox(height: 12),
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.attachment, size: 12, color: AppTheme.accentColor),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Reference Documents (tap to view):',
+                                            style: TextStyle(fontSize: 10, color: AppTheme.accentColor, fontWeight: FontWeight.w600),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 6,
+                                        children: msg.referenceDocuments.map((doc) {
+                                          return InkWell(
+                                            onTap: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) => DocumentDetailScreen(document: doc),
+                                                ),
+                                              );
+                                            },
+                                            borderRadius: BorderRadius.circular(8),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.primaryColor.withValues(alpha: 0.18),
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.4)),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(Icons.description_outlined, size: 13, color: AppTheme.accentColor),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    doc.title,
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: AppTheme.textPrimary,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  const Icon(Icons.arrow_forward_ios, size: 8, color: AppTheme.textMuted),
                                                 ],
                                               ),
                                             ),
