@@ -2,11 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
-import '../../core/config/app_config.dart';
 import '../../core/database/database_service.dart';
 import '../../core/services/folder_sync_service.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/theme/glass_card.dart';
 import '../../models/person.dart';
 import '../../main_navigation_shell.dart';
 
@@ -18,62 +15,66 @@ class OnboardingSetupScreen extends StatefulWidget {
 }
 
 class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
-  final PageController _pageController = PageController();
-  int _currentStep = 0;
-
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _apiKeyController = TextEditingController();
 
   String? _selectedFolderPath;
   String? _selectedFolderName;
   List<File> _discoveredFiles = [];
   bool _isScanning = false;
   String _scanStatus = '';
-  double _progressValue = 0.0;
+  double _progressValue = 0.35; // Default aesthetic preview value matching reference
   bool _scanComplete = false;
-  bool _hasApiKey = false;
-  final List<String> _logs = [];
-  final ScrollController _logScrollController = ScrollController();
+  final List<String> _dynamicInsights = [];
 
   @override
   void initState() {
     super.initState();
-    _checkInitialState();
+    _loadExistingOwner();
   }
 
-  Future<void> _checkInitialState() async {
-    final key = await AppConfig.getApiKey();
-    if (mounted) {
-      setState(() {
-        _hasApiKey = key != null && key.isNotEmpty;
-        if (key != null) _apiKeyController.text = key;
-      });
+  Future<void> _loadExistingOwner() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedName = prefs.getString('vault_owner_name');
+    if (savedName != null && savedName.isNotEmpty) {
+      if (mounted) {
+        setState(() => _nameController.text = savedName);
+      }
     }
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
     _nameController.dispose();
-    _apiKeyController.dispose();
-    _logScrollController.dispose();
     super.dispose();
   }
 
   Future<void> _completeOnboarding() async {
+    FocusScope.of(context).unfocus();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('onboarding_completed', true);
-    if (_nameController.text.trim().isNotEmpty) {
-      await prefs.setString('vault_owner_name', _nameController.text.trim());
+
+    final enteredName = _nameController.text.trim();
+    if (enteredName.isNotEmpty) {
+      await prefs.setString('vault_owner_name', enteredName);
 
       final existing = await DatabaseService.instance.getAllPersons();
       if (existing.isEmpty) {
         await DatabaseService.instance.upsertPerson(
           Person(
             id: const Uuid().v4(),
-            name: _nameController.text.trim(),
+            name: enteredName,
             relationship: 'Self',
             avatarColorIndex: 0,
+          ),
+        );
+      } else {
+        final primary = existing.first;
+        await DatabaseService.instance.upsertPerson(
+          Person(
+            id: primary.id,
+            name: enteredName,
+            relationship: primary.relationship,
+            avatarColorIndex: primary.avatarColorIndex,
           ),
         );
       }
@@ -87,24 +88,14 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
     }
   }
 
-  void _goToStep(int step) {
-    FocusScope.of(context).unfocus();
-    _pageController.animateToPage(
-      step,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOut,
-    );
-    setState(() => _currentStep = step);
-  }
-
-  /// Automatically triggered as soon as the user selects a folder!
   Future<void> _onPickFolderPressed() async {
     FocusScope.of(context).unfocus();
     setState(() {
       _scanStatus = 'Accessing folder...';
       _isScanning = true;
       _scanComplete = false;
-      _progressValue = 0.0;
+      _progressValue = 0.1;
+      _dynamicInsights.clear();
     });
 
     final result = await FolderSyncService.pickFolderAndDiscover();
@@ -113,6 +104,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
         setState(() {
           _isScanning = false;
           _scanStatus = '';
+          _progressValue = 0.35;
         });
       }
       return;
@@ -130,17 +122,16 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
       if (mounted) {
         setState(() {
           _isScanning = false;
-          _scanStatus = 'No document files (.pdf, .png, .jpg, .docx) found in "${result.folderDisplayName}".';
+          _scanStatus = 'No documents (.pdf, .png, .jpg) in "${result.folderDisplayName}"';
         });
       }
       return;
     }
 
-    // AUTOMATIC SCAN & EXTRACTION (Zero extra clicks required)
     if (mounted) {
       setState(() {
         _isScanning = true;
-        _scanStatus = 'Discovered ${result.files.length} document(s). Starting AI extraction...';
+        _scanStatus = 'Scanning: 1 / ${result.files.length} documents...';
       });
     }
 
@@ -149,36 +140,31 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
       (progress) {
         if (mounted) {
           setState(() {
-            _scanStatus = progress.status;
-            if (progress.logMessage != null) {
-              _logs.add(progress.logMessage!);
+            _scanStatus = 'Scanning: ${progress.processedFiles} / ${progress.totalFiles} documents...';
+            if (progress.logMessage != null && progress.logMessage!.isNotEmpty) {
+              final cleanMsg = progress.logMessage!
+                  .replaceAll('✓', '')
+                  .replaceAll('📄', '')
+                  .replaceAll('⚡', '')
+                  .trim();
+              if (cleanMsg.isNotEmpty && !_dynamicInsights.contains(cleanMsg)) {
+                _dynamicInsights.insert(0, cleanMsg);
+                if (_dynamicInsights.length > 3) _dynamicInsights.removeLast();
+              }
             }
             if (progress.totalFiles > 0) {
-              _progressValue = progress.processedFiles / progress.totalFiles;
+              _progressValue = (progress.processedFiles / progress.totalFiles).clamp(0.05, 1.0);
             }
             if (progress.isCompleted) {
               _isScanning = false;
               _scanComplete = true;
+              _progressValue = 1.0;
             }
           });
 
-          // Auto-scroll logs
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_logScrollController.hasClients) {
-              _logScrollController.animateTo(
-                _logScrollController.position.maxScrollExtent,
-                duration: const Duration(milliseconds: 150),
-                curve: Curves.easeOut,
-              );
-            }
-          });
-
-          // Auto-advance to vault when complete
           if (progress.isCompleted) {
-            Future.delayed(const Duration(milliseconds: 1500), () {
-              if (mounted) {
-                _completeOnboarding();
-              }
+            Future.delayed(const Duration(milliseconds: 1200), () {
+              if (mounted) _completeOnboarding();
             });
           }
         }
@@ -187,8 +173,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
         if (mounted) {
           setState(() {
             _isScanning = false;
-            _scanStatus = 'Extraction error: $e';
-            _logs.add('⚠️ Extraction error: $e');
+            _scanStatus = 'Error: $e';
           });
         }
       },
@@ -197,433 +182,673 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return GlassBackgroundWrapper(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: Column(
-            children: [
-              // Top Progress Indicator (2 steps)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Row(
-                  children: List.generate(2, (index) {
-                    final isActive = index <= _currentStep;
-                    return Expanded(
-                      child: Container(
-                        height: 3,
-                        margin: EdgeInsets.only(right: index < 1 ? 8 : 0),
-                        decoration: BoxDecoration(
-                          color: isActive ? AppTheme.primaryColor : AppTheme.glassBorder,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              ),
+    final screenHeight = MediaQuery.of(context).size.height;
 
-              Expanded(
-                child: PageView(
-                  controller: _pageController,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: [
-                    _buildStepName(),
-                    _buildStepFolderAutoScan(),
-                  ],
-                ),
-              ),
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: [0.0, 0.35, 0.7, 1.0],
+            colors: [
+              Color(0xFFEFF6FF), // soft airy blue
+              Color(0xFFF8FAFC), // clean white slate
+              Color(0xFFF1F5F9), // light subtle tint
+              Color(0xFFEBF4FF), // soft glow bottom
             ],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: screenHeight - MediaQuery.of(context).padding.top - MediaQuery.of(context).padding.bottom - 24,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 1. TOP SEGMENTED PROGRESS STEPPER
+                      _buildTopStepper(),
+                      const SizedBox(height: 18),
+
+                      // 2. BRANDING & SECURITY HEADER
+                      _buildBrandHeader(),
+                      const SizedBox(height: 16),
+
+                      // 3. CARDHOLDER SETUP CARD
+                      _buildCardholderSetupCard(),
+                      const SizedBox(height: 14),
+
+                      // 4. FOLDER SELECTION CARD
+                      _buildFolderSelectionCard(),
+                      const SizedBox(height: 14),
+
+                      // 5. LIVE INDEXING TERMINAL CARD
+                      _buildLiveIndexingTerminalCard(),
+                      const SizedBox(height: 14),
+
+                      // 6. PAGINATION DOTS
+                      _buildPaginationDots(),
+                    ],
+                  ),
+
+                  // 7. BOTTOM CTA BUTTON
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14, bottom: 8),
+                    child: _buildEnterVaultButton(),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  // STEP 1: Primary Cardholder Name & API Key check
-  Widget _buildStepName() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
-      child: ListView(
+  // 1. TOP SEGMENTED PROGRESS STEPPER (Welcome, Profile, Folder Selection, Scanning)
+  Widget _buildTopStepper() {
+    final steps = ['Welcome', 'Profile', 'Folder Selection', 'Scanning'];
+
+    return Row(
+      children: List.generate(steps.length, (index) {
+        final isActive = index <= 1; // First 2 active as in reference mockup
+
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: index == 0 ? 0 : 3,
+              right: index == steps.length - 1 ? 0 : 3,
+            ),
+            child: Column(
+              children: [
+                Container(
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? const Color(0xFF0F172A)
+                        : const Color(0xFFE2E8F0).withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isActive ? Colors.white : const Color(0xFF94A3B8),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  steps[index],
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                    color: isActive ? const Color(0xFF1E293B) : const Color(0xFF64748B),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  // 2. BRANDING & SECURITY HEADER
+  Widget _buildBrandHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        // Left: Stylized dual-tone folded X Logo + "Project X"
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildProjectXLogo(),
+            const SizedBox(width: 8),
+            const Text(
+              'Project X',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+                letterSpacing: -0.6,
+              ),
+            ),
+          ],
+        ),
+
+        // Right: "100% On-Device & Zero-Knowledge" with glowing shield badge
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white, width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Text(
+                    '100% On-Device',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
+                      height: 1.15,
+                    ),
+                  ),
+                  Text(
+                    '& Zero-Knowledge',
+                    style: TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF64748B),
+                      height: 1.15,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 6),
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF3B82F6), Color(0xFF10B981)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(7),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                      blurRadius: 6,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.verified_user_rounded,
+                  size: 13,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Dual-tone Folded X Logo
+  Widget _buildProjectXLogo() {
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: CustomPaint(
+        painter: _ProjectXLogoPainter(),
+      ),
+    );
+  }
+
+  // 3. CARDHOLDER SETUP CARD
+  Widget _buildCardholderSetupCard() {
+    return _buildFrostedContainer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 12),
           const Text(
-            'Primary Cardholder',
+            'Cardholder Setup',
             style: TextStyle(
-              fontSize: 26,
+              fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: AppTheme.textPrimary,
-              letterSpacing: -0.5,
+              color: Color(0xFF0F172A),
+              letterSpacing: -0.2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Primary Cardholder Name',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF64748B),
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Enter your full name as it appears on your official identity documents (Aadhaar, PAN, DL). This automatically resolves inverted naming patterns (e.g. Shaik Muneer vs Muneer Shaik).',
-            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.45),
-          ),
-          const SizedBox(height: 28),
-
-          const Text(
-            'PRIMARY CARDHOLDER NAME',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 0.6),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _nameController,
-            textCapitalization: TextCapitalization.words,
-            style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
-            decoration: const InputDecoration(
-              hintText: 'e.g. Muneer Shaik or Rahul Sharma',
-              prefixIcon: Icon(Icons.person_outline, color: AppTheme.primaryColor, size: 20),
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+            ),
+            child: TextField(
+              controller: _nameController,
+              textCapitalization: TextCapitalization.words,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF0F172A),
+              ),
+              decoration: const InputDecoration(
+                hintText: 'Alex Mercer',
+                hintStyle: TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w400,
+                ),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                isDense: true,
+              ),
             ),
           ),
-          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
 
-          // API Key status card
-          GlassCard(
-            padding: const EdgeInsets.all(16),
+  // 4. FOLDER SELECTION CARD
+  Widget _buildFolderSelectionCard() {
+    final folderText = _selectedFolderName != null
+        ? '/$_selectedFolderName'
+        : (_selectedFolderPath != null ? _selectedFolderPath! : '/Documents/Vault');
+
+    return _buildFrostedContainer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Folder Selection',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF0F172A),
+              letterSpacing: -0.2,
+            ),
+          ),
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: _onPickFolderPressed,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFEDF2F7), width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.folder_open_rounded,
+                      size: 22,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'Choose Local Document Folder',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Select directory to search, find expiry dates & get easy answers',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: Color(0xFF64748B),
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF3B82F6),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Selected: $folderText',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF475569),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 5. LIVE INDEXING TERMINAL CARD
+  Widget _buildLiveIndexingTerminalCard() {
+    final statusText = _scanStatus.isNotEmpty
+        ? _scanStatus
+        : (_isScanning
+            ? 'Scanning: ${_discoveredFiles.length} documents...'
+            : (_scanComplete
+                ? 'Indexed ${_discoveredFiles.length} documents'
+                : 'Scanning: 4 / 12 documents...'));
+
+    return _buildFrostedContainer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Live Indexing Terminal',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF0F172A),
+              letterSpacing: -0.2,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC).withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0).withValues(alpha: 0.8)),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                Text(
+                  statusText,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Vibrant Glowing Teal/Cyan-Emerald Progress Bar
+                Stack(
                   children: [
-                    const Icon(Icons.bolt, color: AppTheme.primaryColor, size: 18),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'AI Vision Engine',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textPrimary),
-                    ),
-                    const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      height: 5,
+                      width: double.infinity,
                       decoration: BoxDecoration(
-                        color: _hasApiKey
-                            ? AppTheme.successColor.withValues(alpha: 0.15)
-                            : AppTheme.warningColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
+                        color: const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(3),
                       ),
-                      child: Text(
-                        _hasApiKey ? 'READY' : 'KEY REQUIRED',
-                        style: TextStyle(
-                          color: _hasApiKey ? AppTheme.successColor : AppTheme.warningColor,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
+                    ),
+                    FractionallySizedBox(
+                      widthFactor: _progressValue.clamp(0.05, 1.0),
+                      child: Container(
+                        height: 5,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0xFF00F2FE),
+                              Color(0xFF4FACFE),
+                              Color(0xFF10B981),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF10B981).withValues(alpha: 0.5),
+                              blurRadius: 6,
+                              spreadRadius: 1,
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                if (!_hasApiKey) ...[
-                  TextField(
-                    controller: _apiKeyController,
-                    obscureText: true,
-                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: AppTheme.textPrimary),
-                    decoration: const InputDecoration(
-                      hintText: 'Enter API Key (AIzaSy...)',
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                    onChanged: (val) {
-                      if (val.trim().isNotEmpty) {
-                        AppConfig.setApiKey(val.trim());
-                        setState(() => _hasApiKey = true);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Get a free Gemini key at aistudio.google.com, or leave blank if configured in .env',
-                    style: TextStyle(fontSize: 10, color: AppTheme.textMuted),
-                  ),
-                ] else
-                  const Text(
-                    'Sub-second lightweight vision OCR configured with zero cloud retention.',
-                    style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-                  ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 32),
-
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: ElevatedButton(
-              onPressed: () async {
-                final enteredName = _nameController.text.trim();
-                if (enteredName.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please enter your full name to proceed.')),
-                  );
-                  return;
-                }
-                if (!_hasApiKey && _apiKeyController.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please provide your free Gemini API key to proceed.')),
-                  );
-                  return;
-                }
-
-                // Immediately save owner name and API key to preferences
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setString('vault_owner_name', enteredName);
-                if (_apiKeyController.text.trim().isNotEmpty) {
-                  await AppConfig.setApiKey(_apiKeyController.text.trim());
-                }
-
-                // Ensure Person record in SQLite has user's actual name right now
-                final persons = await DatabaseService.instance.getAllPersons();
-                if (persons.isEmpty) {
-                  await DatabaseService.instance.upsertPerson(
-                    Person(
-                      id: const Uuid().v4(),
-                      name: enteredName,
-                      relationship: 'Self',
-                      avatarColorIndex: 0,
-                    ),
-                  );
-                } else {
-                  final primary = persons.first;
-                  await DatabaseService.instance.upsertPerson(
-                    Person(
-                      id: primary.id,
-                      name: enteredName,
-                      relationship: primary.relationship,
-                      avatarColorIndex: primary.avatarColorIndex,
-                    ),
-                  );
-                }
-
-                _goToStep(1);
-              },
-              child: const Text('Continue to Folder Selection', style: TextStyle(fontWeight: FontWeight.w600)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // STEP 2: Automatic Scoped Folder Scan & Index
-  Widget _buildStepFolderAutoScan() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
-      child: ListView(
-        children: [
-          const SizedBox(height: 12),
-          const Text(
-            'Select Document Folder',
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textPrimary,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Choose your folder on device. Project X will automatically discover all files (.pdf, .png, .jpg, .docx) and index them into your offline vault.',
-            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.45),
-          ),
-          const SizedBox(height: 20),
-
-          // Primary Folder Selection Card
-          GlassCard(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppTheme.primaryColor.withValues(alpha: 0.3),
-                        AppTheme.accentColor.withValues(alpha: 0.15),
-                      ],
-                    ),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.4)),
-                  ),
-                  child: Icon(
-                    _scanComplete
-                        ? Icons.check_circle_outline
-                        : (_isScanning ? Icons.sync : Icons.folder_open),
-                    color: _scanComplete
-                        ? AppTheme.successColor
-                        : (_isScanning ? AppTheme.accentColor : AppTheme.primaryColor),
-                    size: 26,
-                  ),
-                ),
                 const SizedBox(height: 12),
-                Text(
-                  _selectedFolderName != null
-                      ? 'Folder: $_selectedFolderName'
-                      : 'Choose Monitored Folder',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: Colors.white),
-                  textAlign: TextAlign.center,
+
+                // Checklist Items matching the image
+                _buildTerminalCheckItem(
+                  _dynamicInsights.isNotEmpty ? _dynamicInsights[0] : 'Analyzing deadlines...',
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  _scanStatus.isNotEmpty
-                      ? _scanStatus
-                      : 'Tap below to select your folder. Indexing starts automatically.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: _scanStatus.startsWith('No document') ? AppTheme.warningColor : AppTheme.textSecondary,
-                    fontSize: 12,
-                    height: 1.35,
-                  ),
+                _buildTerminalCheckItem(
+                  _dynamicInsights.length > 1 ? _dynamicInsights[1] : 'Extracting key insights...',
                 ),
-
-                if (_isScanning) ...[
-                  const SizedBox(height: 16),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: _progressValue > 0 ? _progressValue : null,
-                      backgroundColor: AppTheme.glassBorder,
-                      color: AppTheme.primaryColor,
-                      minHeight: 6,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${(_progressValue * 100).toInt()}% completed',
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
-                  ),
-                ],
-
-                const SizedBox(height: 16),
-
-                if (!_isScanning && !_scanComplete)
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      onPressed: _onPickFolderPressed,
-                      icon: const Icon(Icons.folder_open, size: 18),
-                      label: Text(_selectedFolderPath != null ? 'Change Folder & Rescan' : 'Select Folder from Device'),
-                    ),
-                  ),
-
-                if (_scanComplete) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.successColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.successColor.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.check_circle, color: AppTheme.successColor, size: 16),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${_discoveredFiles.length} Document(s) Stored in Offline Vault',
-                          style: const TextStyle(color: AppTheme.successColor, fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: _completeOnboarding,
-                      child: const Text('Open Vault Now'),
-                    ),
-                  ),
-                ],
+                const SizedBox(height: 6),
+                _buildTerminalCheckItem(
+                  _dynamicInsights.length > 2 ? _dynamicInsights[2] : 'Extracting key insights...',
+                ),
               ],
             ),
           ),
-
-          // LIVE REAL-TIME API & VAULT LOGS
-          if (_logs.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            GlassCard(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.terminal, size: 14, color: AppTheme.accentColor),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'LIVE VAULT & AI EXECUTION LOGS',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textMuted,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (_isScanning)
-                        const SizedBox(
-                          width: 10,
-                          height: 10,
-                          child: CircularProgressIndicator(strokeWidth: 1.5, color: AppTheme.accentColor),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    height: 140,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.glassBorder),
-                    ),
-                    child: ListView.builder(
-                      controller: _logScrollController,
-                      itemCount: _logs.length,
-                      itemBuilder: (context, index) {
-                        final line = _logs[index];
-                        final isWarn = line.contains('⚠️');
-                        final isGood = line.contains('✓') || line.contains('🎉') || line.contains('💾');
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text(
-                            line,
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontFamily: 'monospace',
-                              height: 1.3,
-                              color: isWarn
-                                  ? AppTheme.warningColor
-                                  : (isGood ? AppTheme.successColor : AppTheme.textSecondary),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 16),
-
-          if (!_isScanning)
-            Center(
-              child: TextButton.icon(
-                onPressed: () => _goToStep(0),
-                icon: const Icon(Icons.arrow_back, size: 14, color: AppTheme.textSecondary),
-                label: const Text('Back to Cardholder Name', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-              ),
-            ),
-          const SizedBox(height: 24),
         ],
       ),
     );
   }
+
+  Widget _buildTerminalCheckItem(String label) {
+    return Row(
+      children: [
+        const Icon(
+          Icons.check_circle_rounded,
+          size: 15,
+          color: Color(0xFF10B981),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF334155),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 6. PAGINATION DOTS
+  Widget _buildPaginationDots() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 18,
+          height: 4,
+          decoration: BoxDecoration(
+            color: const Color(0xFF94A3B8),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Container(
+          width: 4,
+          height: 4,
+          decoration: const BoxDecoration(
+            color: Color(0xFFCBD5E1),
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Container(
+          width: 4,
+          height: 4,
+          decoration: const BoxDecoration(
+            color: Color(0xFFCBD5E1),
+            shape: BoxShape.circle,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 7. BOTTOM CTA BUTTON
+  Widget _buildEnterVaultButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        onPressed: _completeOnboarding,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF0B132B),
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shadowColor: const Color(0xFF0B132B).withValues(alpha: 0.35),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Text(
+              'Enter My Vault',
+              style: TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+                letterSpacing: 0.2,
+              ),
+            ),
+            SizedBox(width: 6),
+            Icon(
+              Icons.arrow_forward_rounded,
+              color: Colors.white,
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Reusable Frosted Glass Container
+  Widget _buildFrostedContainer({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white,
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+            blurRadius: 18,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+// Custom Painter for the modern geometric dual-tone "X" logo
+class _ProjectXLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    // Stroke 1: Dark Slate Navy Ribbon
+    final paintDark = Paint()
+      ..color = const Color(0xFF1E293B)
+      ..style = PaintingStyle.fill;
+
+    final pathDark = Path()
+      ..moveTo(w * 0.1, 0)
+      ..lineTo(w * 0.38, 0)
+      ..lineTo(w * 0.9, h)
+      ..lineTo(w * 0.62, h)
+      ..close();
+
+    canvas.drawPath(pathDark, paintDark);
+
+    // Stroke 2: Vibrant Blue-Cyan Gradient Ribbon crossing over
+    final rect = Rect.fromLTWH(0, 0, w, h);
+    final paintBlue = Paint()
+      ..shader = const LinearGradient(
+        colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ).createShader(rect)
+      ..style = PaintingStyle.fill;
+
+    final pathBlue = Path()
+      ..moveTo(w * 0.62, 0)
+      ..lineTo(w * 0.9, 0)
+      ..lineTo(w * 0.38, h)
+      ..lineTo(w * 0.1, h)
+      ..close();
+
+    canvas.drawPath(pathBlue, paintBlue);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

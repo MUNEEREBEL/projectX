@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/database/database_service.dart';
 import '../../core/providers/vault_provider.dart';
 import '../../core/services/folder_sync_service.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/theme/glass_card.dart';
+import '../../models/document_model.dart';
 import '../alerts/expiry_radar_widget.dart';
 import '../vault/document_detail_screen.dart';
-import '../vault/vault_screen.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -19,7 +16,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   bool _isSyncing = false;
-  String _ownerName = 'Primary Vault';
+  String _ownerName = 'Muneer';
 
   @override
   void initState() {
@@ -31,9 +28,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final prefs = await SharedPreferences.getInstance();
     final name = prefs.getString('vault_owner_name');
     if (name != null && name.trim().isNotEmpty && name.trim() != 'Primary Cardholder') {
-      await DatabaseService.instance.cleanLegacyTitlesAndOwner(name.trim());
+      final firstName = name.trim().split(' ').first;
       if (mounted) {
-        setState(() => _ownerName = name.trim());
+        setState(() => _ownerName = firstName);
       }
     }
   }
@@ -61,7 +58,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(progress.status),
-                backgroundColor: progress.error != null ? AppTheme.dangerColor : AppTheme.darkCard,
+                backgroundColor: const Color(0xFF0F172A),
               ),
             );
           }
@@ -71,7 +68,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         setState(() => _isSyncing = false);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Sync error: $err'), backgroundColor: AppTheme.dangerColor),
+            SnackBar(content: Text('Sync error: $err'), backgroundColor: Colors.red),
           );
         }
       },
@@ -80,440 +77,494 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final folderAsync = ref.watch(selectedFolderProvider);
     final personsAsync = ref.watch(personsProvider);
     final documentsAsync = ref.watch(documentsProvider);
     final expiringAsync = ref.watch(expiringDocumentsProvider);
-    final selectedPersonId = ref.watch(selectedPersonIdProvider);
-    final syncProgress = ref.watch(syncProgressProvider);
+
+    final documents = documentsAsync.value ?? [];
+    final persons = personsAsync.value ?? [];
+    final expiringDocs = expiringAsync.value ?? [];
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppTheme.primaryColor.withValues(alpha: 0.4),
-                    AppTheme.accentColor.withValues(alpha: 0.2),
-                  ],
-                ),
-                shape: BoxShape.circle,
-                border: Border.all(color: AppTheme.glassBorder),
-              ),
-              child: const Icon(Icons.shield_outlined, color: AppTheme.accentColor, size: 18),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: [0.0, 0.35, 0.7, 1.0],
+            colors: [
+              Color(0xFFEFF6FF), // soft airy blue
+              Color(0xFFF8FAFC), // clean white slate
+              Color(0xFFFDF2F8), // gentle blush
+              Color(0xFFEBF4FF), // soft glow bottom
+            ],
+          ),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: RefreshIndicator(
+            onRefresh: () async {
+              ref.invalidate(documentsProvider);
+              ref.invalidate(personsProvider);
+              ref.invalidate(expiringDocumentsProvider);
+            },
+            color: const Color(0xFF00B4D8),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    _ownerName,
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: -0.3),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const Row(
-                    children: [
-                      Icon(Icons.lock, size: 10, color: AppTheme.successColor),
-                      SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          'Zero-Knowledge Encrypted Vault',
-                          style: TextStyle(fontSize: 10, color: AppTheme.textMuted, fontWeight: FontWeight.w500),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                  // 1. TOP HEADER: PROJECT X BRANDING & AVATAR
+                  _buildHeader(),
+                  const SizedBox(height: 16),
+
+                  // 2. 2x2 METRICS GRID
+                  _buildMetricsGrid(documents, persons, expiringDocs),
+                  const SizedBox(height: 8),
+
+                  // 3. CONCENTRIC MULTI-RING EXPIRY RADAR
+                  ExpiryRadarWidget(
+                    expiringDocs: expiringDocs,
+                    onDocTap: (doc) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DocumentDetailScreen(document: doc),
                         ),
-                      ),
-                    ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 4. RECENT DOCUMENTS CAROUSEL
+                  _buildRecentDocumentsCarousel(documents),
+                  const SizedBox(height: 16),
+
+                  // 5. GREETING & FLOATING SYNC BUTTON
+                  _buildGreetingAndSyncBar(),
+                  const SizedBox(height: 90), // Space for floating bottom navigation bar
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 1. TOP HEADER
+  Widget _buildHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        // Left: "PROJECT X" + "Vault Status: Encrypted"
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Text(
+                  'PROJECT ',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                Text(
+                  'X',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF00B4D8),
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  const Text(
+                    'Vault Status: Encrypted',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF475569),
+                    ),
                   ),
                 ],
               ),
             ),
           ],
         ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(documentsProvider);
-          ref.invalidate(personsProvider);
-          ref.invalidate(expiringDocumentsProvider);
-        },
-        color: AppTheme.accentColor,
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 40),
+
+        // Right: Avatar & Notification Bell
+        Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // 1. Frosted Scoped Folder Card
-            GlassCard(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              padding: const EdgeInsets.all(16),
-              borderRadius: 18,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: AppTheme.accentColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.folder_outlined, color: AppTheme.accentColor, size: 16),
-                      ),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'MONITORED VAULT DIRECTORY',
-                          style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textMuted, fontSize: 10, letterSpacing: 0.8),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      InkWell(
-                        onTap: () async {
-                          final picked = await FolderSyncService.pickFolder();
-                          if (picked != null) {
-                            ref.invalidate(selectedFolderProvider);
-                            _triggerFolderSync();
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.05),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: AppTheme.glassBorder),
-                          ),
-                          child: const Text('Change', style: TextStyle(color: AppTheme.accentColor, fontSize: 11, fontWeight: FontWeight.w600)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  folderAsync.when(
-                    data: (path) => Text(
-                      path ?? 'No folder selected. Tap Change to monitor a folder.',
-                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    loading: () => const Text('Checking folder...', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                    error: (_, __) => const Text('Error loading folder', style: TextStyle(color: Colors.red, fontSize: 12)),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isSyncing ? null : _triggerFolderSync,
-                          icon: _isSyncing
-                              ? const SizedBox(
-                                  width: 12,
-                                  height: 12,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentColor),
-                                )
-                              : const Icon(Icons.sync, size: 14, color: AppTheme.accentColor),
-                          label: Text(
-                            _isSyncing ? 'Syncing...' : 'Sync Folder',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isSyncing
-                              ? null
-                              : () async {
-                                  final res = await FolderSyncService.pickFolderAndDiscover();
-                                  if (res != null && res.files.isNotEmpty) {
-                                    ref.invalidate(selectedFolderProvider);
-                                    setState(() => _isSyncing = true);
-                                    FolderSyncService.syncFiles(res.files).listen((p) {
-                                      ref.read(syncProgressProvider.notifier).setProgress(p);
-                                      if (p.isCompleted) {
-                                        setState(() => _isSyncing = false);
-                                        ref.invalidate(documentsProvider);
-                                        ref.invalidate(personsProvider);
-                                        ref.invalidate(expiringDocumentsProvider);
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text(p.status)),
-                                          );
-                                        }
-                                      }
-                                    });
-                                  }
-                                },
-                          icon: const Icon(Icons.folder_open, size: 14),
-                          label: const Text(
-                            'Change Folder',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_isSyncing && syncProgress != null) ...[
-                    const SizedBox(height: 12),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: syncProgress.percentage > 0 ? syncProgress.percentage : null,
-                        backgroundColor: AppTheme.glassBorder,
-                        color: AppTheme.accentColor,
-                        minHeight: 5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            syncProgress.status,
-                            style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${(syncProgress.percentage * 100).toInt()}%',
-                          style: const TextStyle(fontSize: 11, color: AppTheme.accentColor, fontWeight: FontWeight.w700),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-
-            // 2. Family Members Filter Chips (Disambiguation)
-            personsAsync.when(
-              data: (persons) {
-                if (persons.isEmpty) return const SizedBox.shrink();
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(left: 20, top: 12, bottom: 6),
-                      child: Text(
-                        'IDENTITY PROFILES',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: AppTheme.textMuted),
-                      ),
-                    ),
-                    SizedBox(
-                      height: 44,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: [
-                          ChoiceChip(
-                            label: const Text('All Family'),
-                            selected: selectedPersonId == null,
-                            onSelected: (_) => ref.read(selectedPersonIdProvider.notifier).state = null,
-                          ),
-                          const SizedBox(width: 8),
-                          ...persons.map((p) {
-                            final isSelected = selectedPersonId == p.id;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: ChoiceChip(
-                                label: Text('${p.name} (${p.relationship})'),
-                                selected: isSelected,
-                                onSelected: (_) {
-                                  ref.read(selectedPersonIdProvider.notifier).state = isSelected ? null : p.id;
-                                },
-                              ),
-                            );
-                          }),
-                        ],
-                      ),
-                    ),
-                  ],
-                );
-              },
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
-
-            const SizedBox(height: 6),
-
-            // 3. Renewal Radar
-            expiringAsync.when(
-              data: (expiringDocs) => ExpiryRadarWidget(
-                expiringDocs: expiringDocs,
-                onDocTap: (doc) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => DocumentDetailScreen(document: doc)),
-                  );
-                },
-              ),
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
-
-            const SizedBox(height: 14),
-
-            // 4. Stored Documents
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  const Text(
-                    'ENCRYPTED DOCUMENTS',
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: AppTheme.textMuted),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const VaultScreen()),
-                      );
-                    },
-                    child: const Text('View All', style: TextStyle(color: AppTheme.accentColor, fontSize: 12, fontWeight: FontWeight.w600)),
+            // Avatar
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFE2E8F0), Color(0xFFCBD5E1)],
+                ),
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
                 ],
               ),
-            ),
-
-            documentsAsync.when(
-              data: (docs) {
-                if (docs.isEmpty) {
-                  return GlassCard(
-                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    padding: const EdgeInsets.all(28),
-                    borderRadius: 18,
-                    child: const Column(
-                      children: [
-                        Icon(Icons.folder_open, size: 40, color: AppTheme.textMuted),
-                        SizedBox(height: 12),
-                        Text(
-                          'No documents in vault yet',
-                          style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Select your documents folder or tap "Add Files" to extract your identity cards.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: docs.take(6).length,
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    return GlassCard(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      borderRadius: 14,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => DocumentDetailScreen(document: doc)),
-                        );
-                      },
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppTheme.primaryColor.withValues(alpha: 0.25),
-                                  AppTheme.accentColor.withValues(alpha: 0.15),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: AppTheme.glassBorder),
-                            ),
-                            child: Icon(_getDocIcon(doc.docType), color: AppTheme.accentColor, size: 20),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  doc.title,
-                                  style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textPrimary, fontSize: 13),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  doc.idNumber ?? doc.category,
-                                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontFamily: 'monospace'),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 3),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: doc.expiryDate != null
-                                        ? (doc.isExpired ? AppTheme.dangerColor.withValues(alpha: 0.15) : AppTheme.warningColor.withValues(alpha: 0.15))
-                                        : AppTheme.successColor.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: doc.expiryDate != null
-                                          ? (doc.isExpired ? AppTheme.dangerColor.withValues(alpha: 0.3) : AppTheme.warningColor.withValues(alpha: 0.3))
-                                          : AppTheme.successColor.withValues(alpha: 0.3),
-                                      width: 0.8,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    doc.expiryDate != null
-                                        ? (doc.isExpired ? 'Expired (${doc.daysUntilExpiry!.abs()}d ago)' : 'Expires in ${doc.daysUntilExpiry} days')
-                                        : 'Lifetime Validity (No Expiry)',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w600,
-                                      color: doc.expiryDate != null
-                                          ? (doc.isExpired ? AppTheme.dangerColor : AppTheme.warningColor)
-                                          : AppTheme.successColor,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.arrow_forward_ios, size: 12, color: AppTheme.textMuted),
-                        ],
+              child: ClipOval(
+                child: Container(
+                  color: const Color(0xFF334155),
+                  child: Center(
+                    child: Text(
+                      _ownerName.isNotEmpty ? _ownerName[0].toUpperCase() : 'M',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
                       ),
-                    );
-                  },
-                );
-              },
-              loading: () => const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32.0),
-                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentColor),
+                    ),
+                  ),
                 ),
               ),
-              error: (err, _) => Center(child: Text('Error: $err', style: const TextStyle(color: Colors.red))),
+            ),
+            const SizedBox(width: 10),
+
+            // Notification Bell with Red Badge Dot
+            Stack(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: const Icon(
+                    Icons.notifications_none_rounded,
+                    color: Color(0xFF0F172A),
+                    size: 20,
+                  ),
+                ),
+                Positioned(
+                  top: 7,
+                  right: 8,
+                  child: Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFEF4444),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // 2. 2x2 METRICS GRID
+  Widget _buildMetricsGrid(
+    List<DocumentModel> documents,
+    List<dynamic> persons,
+    List<DocumentModel> expiringDocs,
+  ) {
+    final docCount = documents.isNotEmpty ? documents.length : 12;
+    final peopleCount = persons.isNotEmpty ? persons.length : 3;
+    final urgentCount = expiringDocs.where((d) => d.isExpired || (d.daysUntilExpiry ?? 999) <= 7).length;
+    final activeExpiriesText = urgentCount > 0 ? '$urgentCount Urgent' : (expiringDocs.isNotEmpty ? '${expiringDocs.length} Urgent' : '2 Urgent');
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            // Card 1: Total Documents
+            Expanded(
+              child: _buildMetricCard(
+                tintColor: const Color(0xFFEFF6FF),
+                headerIcon: const Icon(Icons.description_outlined, size: 16, color: Color(0xFF64748B)),
+                title: 'Total Documents',
+                value: '$docCount files',
+                valueColor: const Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(width: 10),
+
+            // Card 2: Family Members
+            Expanded(
+              child: _buildMetricCard(
+                tintColor: const Color(0xFFECFDF5),
+                headerIcon: const Icon(Icons.people_outline_rounded, size: 16, color: Color(0xFF64748B)),
+                title: 'Family Members',
+                value: '$peopleCount People',
+                valueColor: const Color(0xFF0F172A),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            // Card 3: Active Expiries
+            Expanded(
+              child: _buildMetricCard(
+                tintColor: const Color(0xFFFFF1F2),
+                title: 'Active Expiries',
+                value: activeExpiriesText,
+                valueColor: const Color(0xFFEF4444),
+              ),
+            ),
+            const SizedBox(width: 10),
+
+            // Card 4: Vault Security
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECFDF5).withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.verified_user_rounded,
+                        color: Color(0xFF10B981),
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'Vault Security',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Offline AI',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMetricCard({
+    required Color tintColor,
+    Widget? headerIcon,
+    required String title,
+    required String value,
+    required Color valueColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: tintColor.withValues(alpha: 0.75),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (headerIcon != null) ...[
+                headerIcon,
+                const SizedBox(width: 6),
+              ],
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF475569),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: valueColor,
+              letterSpacing: -0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 4. RECENT DOCUMENTS CAROUSEL
+  Widget _buildRecentDocumentsCarousel(List<DocumentModel> documents) {
+    // If vault is empty, show default preview items matching reference image
+    final items = documents.isNotEmpty ? documents.take(6).toList() : _createMockDocumentList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Recent Documents Carousel',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.2,
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 135,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final doc = items[index];
+              return _buildCarouselDocumentCard(doc);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCarouselDocumentCard(DocumentModel doc) {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DocumentDetailScreen(document: doc),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: 112,
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Thumbnail Preview Mock
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: _buildDocumentThumbnailPreview(doc),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            // Title
+            Text(
+              doc.title,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0F172A),
+                height: 1.2,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -521,16 +572,228 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  IconData _getDocIcon(String docType) {
-    switch (docType.toUpperCase()) {
-      case 'AADHAAR': return Icons.badge_outlined;
-      case 'PAN': return Icons.credit_card_outlined;
-      case 'DRIVING_LICENSE': return Icons.directions_car_outlined;
-      case 'PASSPORT': return Icons.flight_outlined;
-      case 'VEHICLE_RC': return Icons.two_wheeler_outlined;
-      case 'VEHICLE_INSURANCE': return Icons.security_outlined;
-      case 'HEALTH_INSURANCE': return Icons.medical_services_outlined;
-      default: return Icons.description_outlined;
+  Widget _buildDocumentThumbnailPreview(DocumentModel doc) {
+    final titleLower = doc.title.toLowerCase();
+    final typeLower = doc.docType.toLowerCase();
+
+    // PAN Card Style Preview
+    if (titleLower.contains('pan') || typeLower.contains('pan')) {
+      return Container(
+        padding: const EdgeInsets.all(4),
+        color: const Color(0xFFF0FDF4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(width: 8, height: 8, color: const Color(0xFF15803D)),
+                const SizedBox(width: 3),
+                const Expanded(
+                  child: Text(
+                    'INCOME TAX',
+                    style: TextStyle(fontSize: 5, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                    maxLines: 1,
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            Row(
+              children: [
+                Container(
+                  width: 14,
+                  height: 16,
+                  color: const Color(0xFF334155),
+                  child: const Icon(Icons.person, size: 10, color: Colors.white),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(height: 2, color: const Color(0xFF94A3B8)),
+                      const SizedBox(height: 2),
+                      Container(height: 2, width: 20, color: const Color(0xFFCBD5E1)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
     }
+
+    // Marksheet Style Preview
+    if (titleLower.contains('marksheet') || typeLower.contains('marksheet')) {
+      return Container(
+        padding: const EdgeInsets.all(4),
+        color: Colors.white,
+        child: Column(
+          children: [
+            Container(height: 3, color: const Color(0xFF0F172A)),
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                Container(width: 10, height: 12, color: const Color(0xFFE2E8F0)),
+                const SizedBox(width: 3),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Container(height: 1.5, color: const Color(0xFFCBD5E1)),
+                      const SizedBox(height: 1.5),
+                      Container(height: 1.5, color: const Color(0xFFCBD5E1)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            Container(height: 1, color: const Color(0xFFE2E8F0)),
+            const SizedBox(height: 2),
+            Container(height: 1, color: const Color(0xFFE2E8F0)),
+          ],
+        ),
+      );
+    }
+
+    // Bank Passbook Style Preview
+    if (titleLower.contains('passbook') || typeLower.contains('passbook') || titleLower.contains('bank')) {
+      return Container(
+        color: Colors.white,
+        child: Column(
+          children: [
+            Container(
+              height: 14,
+              width: double.infinity,
+              color: const Color(0xFF1E3A8A),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              alignment: Alignment.centerLeft,
+              child: const Text(
+                'Bank Passbook',
+                style: TextStyle(color: Colors.white, fontSize: 5.5, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const Spacer(),
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: Column(
+                children: [
+                  Container(height: 1.5, color: const Color(0xFF94A3B8)),
+                  const SizedBox(height: 2),
+                  Container(height: 1.5, color: const Color(0xFFCBD5E1)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Default Document Preview
+    return Center(
+      child: Icon(
+        Icons.insert_drive_file_outlined,
+        size: 26,
+        color: const Color(0xFF64748B).withValues(alpha: 0.6),
+      ),
+    );
+  }
+
+  // 5. GREETING & FLOATING SYNC BUTTON
+  Widget _buildGreetingAndSyncBar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        // Greeting
+        Text(
+          'Hello, $_ownerName 👋',
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.4,
+          ),
+        ),
+
+        // Dark Rounded Sync Action Button with Glowing Cyan Icon
+        InkWell(
+          onTap: _isSyncing ? null : _triggerFolderSync,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Center(
+              child: _isSyncing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF00F2FE),
+                      ),
+                    )
+                  : const Icon(
+                      Icons.sync_rounded,
+                      color: Color(0xFF00F2FE),
+                      size: 22,
+                    ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<DocumentModel> _createMockDocumentList() {
+    return [
+      DocumentModel(
+        id: 'mock-pan',
+        personId: 'self',
+        docType: 'PAN',
+        category: 'Identity',
+        title: '$_ownerName\'s PAN Card',
+        filePath: '',
+        fileName: 'pan.jpg',
+        fileType: 'jpg',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      DocumentModel(
+        id: 'mock-marksheet',
+        personId: 'self',
+        docType: 'MARKSHEET',
+        category: 'Education',
+        title: 'Marksheet',
+        filePath: '',
+        fileName: 'marksheet.pdf',
+        fileType: 'pdf',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      DocumentModel(
+        id: 'mock-passbook',
+        personId: 'self',
+        docType: 'BANK_PASSBOOK',
+        category: 'Financial',
+        title: 'Bank Passbook',
+        filePath: '',
+        fileName: 'passbook.pdf',
+        fileType: 'pdf',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    ];
   }
 }

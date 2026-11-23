@@ -1,6 +1,5 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'core/theme/app_theme.dart';
 import 'core/theme/glass_card.dart';
 import 'features/assistant/assistant_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
@@ -21,6 +20,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     DashboardScreen(),
     VaultScreen(),
     AssistantScreen(),
+    VaultScreen(), // Expiry tab navigates to vault documents
     SettingsScreen(),
   ];
 
@@ -29,6 +29,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     return GlassBackgroundWrapper(
       child: Scaffold(
         backgroundColor: Colors.transparent,
+        extendBody: true,
         body: IndexedStack(
           index: _currentIndex,
           children: _screens,
@@ -40,33 +41,35 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
 
   Widget _buildGlassBottomBar() {
     final items = [
-      {'icon': Icons.shield_outlined, 'activeIcon': Icons.shield, 'label': 'Vault'},
-      {'icon': Icons.folder_outlined, 'activeIcon': Icons.folder, 'label': 'Documents'},
-      {'icon': Icons.chat_bubble_outline, 'activeIcon': Icons.chat_bubble, 'label': 'AI Ask'},
-      {'icon': Icons.settings_outlined, 'activeIcon': Icons.settings, 'label': 'Settings'},
+      {'icon': Icons.grid_view_rounded, 'label': 'Dashboard'},
+      {'icon': Icons.folder_outlined, 'label': 'Vault'},
+      {'icon': Icons.auto_awesome_outlined, 'label': 'AI Ask'},
+      {'icon': Icons.access_time_rounded, 'label': 'Expiry'},
+      {'icon': Icons.settings_outlined, 'label': 'Settings'},
     ];
 
     return SafeArea(
+      bottom: true,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(24),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
               height: 64,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.92),
-                borderRadius: BorderRadius.circular(22),
+                color: Colors.white.withValues(alpha: 0.88),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: const Color(0xFFE2E8F0),
-                  width: 1.0,
+                  color: Colors.white.withValues(alpha: 0.9),
+                  width: 1.2,
                 ),
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFF0F172A).withValues(alpha: 0.08),
-                    blurRadius: 18,
+                    blurRadius: 20,
                     offset: const Offset(0, 4),
                   ),
                 ],
@@ -77,43 +80,68 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                   final isSelected = _currentIndex == index;
                   final item = items[index];
 
-                  return InkWell(
-                    onTap: () => setState(() => _currentIndex = index),
-                    borderRadius: BorderRadius.circular(16),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  if (isSelected) {
+                    // Active Item: Dark Rounded Rectangle with Cyan Glow & Text
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                       decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppTheme.primaryColor.withValues(alpha: 0.12)
-                            : Colors.transparent,
+                        color: const Color(0xFF0F172A),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isSelected
-                              ? AppTheme.primaryColor.withValues(alpha: 0.25)
-                              : Colors.transparent,
-                          width: 1,
-                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF00F2FE).withValues(alpha: 0.35),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            isSelected
-                                ? item['activeIcon'] as IconData
-                                : item['icon'] as IconData,
-                            color: isSelected
-                                ? AppTheme.primaryColor
-                                : AppTheme.textMuted,
-                            size: 20,
+                            item['icon'] as IconData,
+                            size: 19,
+                            color: const Color(0xFF00F2FE),
                           ),
-                          const SizedBox(height: 3),
+                          const SizedBox(height: 2),
                           Text(
                             item['label'] as String,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                              color: isSelected ? AppTheme.primaryColor : AppTheme.textMuted,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF00F2FE),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  // Inactive Item: Clean Muted Icon and Label
+                  return InkWell(
+                    onTap: () => setState(() => _currentIndex = index),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            item['icon'] as IconData,
+                            size: 19,
+                            color: const Color(0xFF64748B),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            item['label'] as String,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF64748B),
+                              letterSpacing: -0.2,
                             ),
                           ),
                         ],
