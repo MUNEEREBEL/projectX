@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/database/database_service.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/glass_card.dart';
 import '../../models/document_model.dart';
 import '../../models/person.dart';
 
@@ -13,7 +15,7 @@ class AssistiveBallDialog extends StatefulWidget {
   static Future<void> show(BuildContext context) {
     return showDialog(
       context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.6),
+      barrierColor: Colors.black.withValues(alpha: 0.65),
       builder: (context) => const AssistiveBallDialog(),
     );
   }
@@ -83,264 +85,312 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: AppTheme.darkCard,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppTheme.darkBorder, width: 1.2),
-      ),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 600),
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Dialog Header
-            Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.bolt, color: AppTheme.primaryColor, size: 18),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Assistive Form Copilot',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
-                      ),
-                      Text(
-                        '1-Tap Copy & Quick File Upload',
-                        style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18, color: AppTheme.textSecondary),
-                  onPressed: () => Navigator.pop(context),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 440, maxHeight: 620),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F1422).withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 30,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
-
-            const SizedBox(height: 14),
-
-            // Family Member Selector
-            if (_persons.isNotEmpty)
-              SizedBox(
-                height: 32,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Dialog Header
+                Row(
                   children: [
-                    ChoiceChip(
-                      label: const Text('All'),
-                      selected: _selectedPersonId == null,
-                      onSelected: (_) {
-                        setState(() => _selectedPersonId = null);
-                        _loadData();
-                      },
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                    const SizedBox(width: 6),
-                    ..._persons.map((p) {
-                      final isSelected = _selectedPersonId == p.id;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ChoiceChip(
-                          label: Text(p.name),
-                          selected: isSelected,
-                          onSelected: (_) {
-                            setState(() => _selectedPersonId = isSelected ? null : p.id);
-                            _loadData();
-                          },
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [AppTheme.primaryColor, AppTheme.accentColor],
                         ),
-                      );
-                    }),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTheme.accentColor.withValues(alpha: 0.35),
+                            blurRadius: 10,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.bolt, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Assistive Form Copilot',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary, letterSpacing: -0.3),
+                          ),
+                          Text(
+                            '1-Tap Form Filling & Document Upload',
+                            style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20, color: AppTheme.textMuted),
+                      onPressed: () => Navigator.pop(context),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
                   ],
                 ),
-              ),
 
-            const SizedBox(height: 12),
+                const SizedBox(height: 16),
 
-            // Search Bar
-            TextField(
-              controller: _searchController,
-              onChanged: (_) => _loadData(),
-              style: const TextStyle(fontSize: 13, color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Search field (e.g. pan, dl, ifsc, address)...',
-                prefixIcon: const Icon(Icons.search, size: 18, color: AppTheme.textMuted),
-                contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 16, color: AppTheme.textMuted),
-                        onPressed: () {
-                          _searchController.clear();
-                          _loadData();
-                        },
-                      )
-                    : null,
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // File Upload Section (When Chrome or a form asks to upload files)
-            const Text(
-              'FAST FILE UPLOAD',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.textMuted, letterSpacing: 0.5),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 36,
-              child: _documents.isEmpty
-                  ? const Text('No documents in vault', style: TextStyle(color: AppTheme.textMuted, fontSize: 11))
-                  : ListView.builder(
+                // Family Member Selector
+                if (_persons.isNotEmpty)
+                  SizedBox(
+                    height: 34,
+                    child: ListView(
                       scrollDirection: Axis.horizontal,
-                      itemCount: _documents.length,
-                      itemBuilder: (context, index) {
-                        final doc = _documents[index];
-                        return Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          child: ActionChip(
-                            avatar: Icon(
-                              doc.fileType == 'pdf' ? Icons.picture_as_pdf : Icons.image,
-                              size: 14,
-                              color: AppTheme.primaryColor,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('All'),
+                          selected: _selectedPersonId == null,
+                          onSelected: (_) {
+                            setState(() => _selectedPersonId = null);
+                            _loadData();
+                          },
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        ),
+                        const SizedBox(width: 8),
+                        ..._persons.map((p) {
+                          final isSelected = _selectedPersonId == p.id;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(p.name),
+                              selected: isSelected,
+                              onSelected: (_) {
+                                setState(() => _selectedPersonId = isSelected ? null : p.id);
+                                _loadData();
+                              },
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
                             ),
-                            label: Text(
-                              doc.title,
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-                            ),
-                            tooltip: 'Share/Pass file to upload dialog',
-                            onPressed: () => _shareDocumentFile(doc),
-                            backgroundColor: AppTheme.darkBg,
-                            side: const BorderSide(color: AppTheme.darkBorder),
-                          ),
-                        );
-                      },
+                          );
+                        }),
+                      ],
                     ),
-            ),
+                  ),
 
-            const Divider(color: AppTheme.darkBorder, height: 20),
+                const SizedBox(height: 14),
 
-            // Field List
-            const Text(
-              'VERIFIED FORM VALUES',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.textMuted, letterSpacing: 0.5),
-            ),
-            const SizedBox(height: 6),
+                // Search Bar
+                GlassCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  borderRadius: 12,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (_) => _loadData(),
+                    style: const TextStyle(fontSize: 13, color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Search field (e.g. pan, dl, ifsc, address)...',
+                      hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                      prefixIcon: const Icon(Icons.search, size: 18, color: AppTheme.accentColor),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 16, color: AppTheme.textMuted),
+                              onPressed: () {
+                                _searchController.clear();
+                                _loadData();
+                              },
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
 
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryColor))
-                  : _searchResults.isEmpty
-                      ? Center(
-                          child: Text(
-                            _documents.isEmpty
-                                ? 'No documents in vault yet. Sync your folder first.'
-                                : 'No matching fields found.',
-                            style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                          ),
-                        )
-                      : ListView.separated(
-                          itemCount: _searchResults.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 6),
+                const SizedBox(height: 14),
+
+                // File Upload Section (When Chrome or a form asks to upload files)
+                const Text(
+                  'FAST FILE UPLOAD',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 0.8),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 38,
+                  child: _documents.isEmpty
+                      ? const Text('No documents in vault', style: TextStyle(color: AppTheme.textMuted, fontSize: 11))
+                      : ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _documents.length,
                           itemBuilder: (context, index) {
-                            final item = _searchResults[index];
-                            final id = item['id'] as String;
-                            final fieldName = item['field_name'] as String;
-                            final fieldValue = item['field_value'] as String;
-                            final personName = item['person_name'] as String;
-                            final isCopied = _copiedFieldId == id;
-
+                            final doc = _documents[index];
                             return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: AppTheme.darkBg,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: isCopied ? AppTheme.primaryColor : AppTheme.darkBorder,
+                              margin: const EdgeInsets.only(right: 8),
+                              child: InkWell(
+                                onTap: () => _shareDocumentFile(doc),
+                                borderRadius: BorderRadius.circular(10),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: AppTheme.glassBorderHighlight),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        doc.fileType == 'pdf' ? Icons.picture_as_pdf : Icons.image,
+                                        size: 14,
+                                        color: AppTheme.accentColor,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        doc.title,
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                            );
+                          },
+                        ),
+                ),
+
+                const Divider(color: AppTheme.darkBorder, height: 24),
+
+                // Field List
+                const Text(
+                  'VERIFIED FORM VALUES (TAP TO COPY)',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 0.8),
+                ),
+                const SizedBox(height: 8),
+
+                Expanded(
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentColor))
+                      : _searchResults.isEmpty
+                          ? Center(
+                              child: Text(
+                                _documents.isEmpty
+                                    ? 'No documents in vault yet. Sync your folder first.'
+                                    : 'No matching fields found.',
+                                style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: _searchResults.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 6),
+                              itemBuilder: (context, index) {
+                                final item = _searchResults[index];
+                                final id = item['id'] as String;
+                                final fieldName = item['field_name'] as String;
+                                final fieldValue = item['field_value'] as String;
+                                final personName = item['person_name'] as String;
+                                final isCopied = _copiedFieldId == id;
+
+                                return InkWell(
+                                  onTap: () => _copyToClipboard(id, fieldValue),
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: isCopied
+                                          ? AppTheme.successColor.withValues(alpha: 0.15)
+                                          : Colors.white.withValues(alpha: 0.05),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: isCopied
+                                            ? AppTheme.successColor.withValues(alpha: 0.5)
+                                            : AppTheme.glassBorder,
+                                      ),
+                                    ),
+                                    child: Row(
                                       children: [
-                                        Text(
-                                          '$fieldName ($personName)',
-                                          style: const TextStyle(fontSize: 10, color: AppTheme.textMuted, fontWeight: FontWeight.w500),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Text(
+                                                    fieldName.toUpperCase(),
+                                                    style: const TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: AppTheme.textMuted,
+                                                      letterSpacing: 0.5,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white.withValues(alpha: 0.08),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                    ),
+                                                    child: Text(
+                                                      personName,
+                                                      style: const TextStyle(fontSize: 9, color: AppTheme.accentColor, fontWeight: FontWeight.w600),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                fieldValue,
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppTheme.textPrimary,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                        const SizedBox(height: 2),
-                                        SelectableText(
-                                          fieldValue,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppTheme.textPrimary,
-                                            fontFamily: 'monospace',
+                                        Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color: isCopied
+                                                ? AppTheme.successColor.withValues(alpha: 0.2)
+                                                : Colors.white.withValues(alpha: 0.06),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            isCopied ? Icons.check : Icons.copy_rounded,
+                                            size: 14,
+                                            color: isCopied ? AppTheme.successColor : AppTheme.accentColor,
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  InkWell(
-                                    onTap: () => _copyToClipboard(id, fieldValue),
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: isCopied
-                                            ? AppTheme.successColor.withValues(alpha: 0.2)
-                                            : AppTheme.darkCard,
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                          color: isCopied ? AppTheme.successColor : AppTheme.darkBorder,
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            isCopied ? Icons.check : Icons.copy,
-                                            size: 13,
-                                            color: isCopied ? AppTheme.successColor : AppTheme.textSecondary,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            isCopied ? 'Copied' : 'Copy',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: isCopied ? AppTheme.successColor : AppTheme.textPrimary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+                                );
+                              },
+                            ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

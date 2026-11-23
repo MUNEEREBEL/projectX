@@ -1,6 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'core/services/overlay_service.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/glass_card.dart';
 import 'features/assistant/assistant_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'features/overlay/assistive_ball_dialog.dart';
@@ -39,36 +41,105 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   @override
   Widget build(BuildContext context) {
     return AssistiveBallWidget(
-      child: Scaffold(
-        body: IndexedStack(
-          index: _currentIndex,
-          children: _screens,
+      child: GlassBackgroundWrapper(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: IndexedStack(
+            index: _currentIndex,
+            children: _screens,
+          ),
+          bottomNavigationBar: _buildGlassBottomBar(),
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: (index) => setState(() => _currentIndex = index),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home, color: AppTheme.primaryColor),
-              label: 'Vault',
+      ),
+    );
+  }
+
+  Widget _buildGlassBottomBar() {
+    final items = [
+      {'icon': Icons.shield_outlined, 'activeIcon': Icons.shield, 'label': 'Vault'},
+      {'icon': Icons.folder_outlined, 'activeIcon': Icons.folder, 'label': 'Documents'},
+      {'icon': Icons.chat_bubble_outline, 'activeIcon': Icons.chat_bubble, 'label': 'AI Ask'},
+      {'icon': Icons.settings_outlined, 'activeIcon': Icons.settings, 'label': 'Settings'},
+    ];
+
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              height: 64,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF131826).withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  width: 1.0,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: 20,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: List.generate(items.length, (index) {
+                  final isSelected = _currentIndex == index;
+                  final item = items[index];
+
+                  return InkWell(
+                    onTap: () => setState(() => _currentIndex = index),
+                    borderRadius: BorderRadius.circular(16),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppTheme.primaryColor.withValues(alpha: 0.2)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppTheme.primaryColor.withValues(alpha: 0.4)
+                              : Colors.transparent,
+                          width: 1,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isSelected
+                                ? item['activeIcon'] as IconData
+                                : item['icon'] as IconData,
+                            color: isSelected
+                                ? AppTheme.accentColor
+                                : AppTheme.textMuted,
+                            size: 20,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            item['label'] as String,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                              color: isSelected ? AppTheme.textPrimary : AppTheme.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ),
             ),
-            NavigationDestination(
-              icon: Icon(Icons.folder_outlined),
-              selectedIcon: Icon(Icons.folder, color: AppTheme.primaryColor),
-              label: 'Documents',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.chat_bubble_outline),
-              selectedIcon: Icon(Icons.chat_bubble, color: AppTheme.primaryColor),
-              label: 'AI Ask',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings, color: AppTheme.primaryColor),
-              label: 'Settings',
-            ),
-          ],
+          ),
         ),
       ),
     );

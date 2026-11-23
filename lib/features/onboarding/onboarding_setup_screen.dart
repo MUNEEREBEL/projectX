@@ -8,6 +8,7 @@ import '../../core/database/database_service.dart';
 import '../../core/services/folder_sync_service.dart';
 import '../../core/services/overlay_service.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/glass_card.dart';
 import '../../models/person.dart';
 import '../../main_navigation_shell.dart';
 import '../overlay/assistive_ball_dialog.dart';
@@ -86,6 +87,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
   }
 
   void _nextStep() {
+    FocusScope.of(context).unfocus();
     if (_currentStep < 3) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 250),
@@ -99,86 +101,97 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.darkBg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top Stepper Indicator
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Row(
-                children: List.generate(4, (index) {
-                  final isActive = index <= _currentStep;
-                  return Expanded(
-                    child: Container(
-                      height: 3,
-                      margin: EdgeInsets.only(right: index < 3 ? 8 : 0),
-                      decoration: BoxDecoration(
-                        color: isActive ? AppTheme.primaryColor : AppTheme.darkBorder,
-                        borderRadius: BorderRadius.circular(2),
+    return GlassBackgroundWrapper(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Top Stepper Indicator
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                child: Row(
+                  children: List.generate(4, (index) {
+                    final isActive = index <= _currentStep;
+                    return Expanded(
+                      child: Container(
+                        height: 3,
+                        margin: EdgeInsets.only(right: index < 3 ? 8 : 0),
+                        decoration: BoxDecoration(
+                          color: isActive ? AppTheme.primaryColor : AppTheme.glassBorder,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
-                    ),
-                  );
-                }),
+                    );
+                  }),
+                ),
               ),
-            ),
 
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  _buildStepName(),
-                  _buildStepDocumentsAndApiKey(),
-                  _buildStepScan(),
-                  _buildStepCopilotTest(),
-                ],
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _buildStepName(),
+                    _buildStepDocumentsAndApiKey(),
+                    _buildStepScan(),
+                    _buildStepCopilotTest(),
+                  ],
+                ),
               ),
-            ),
 
-            // Bottom Navigation Actions
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Row(
-                children: [
-                  if (_currentStep > 0 && _currentStep < 3)
-                    TextButton(
+              // Bottom Navigation Actions
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                child: Row(
+                  children: [
+                    if (_currentStep > 0 && _currentStep < 3)
+                      TextButton(
+                        onPressed: () {
+                          FocusScope.of(context).unfocus();
+                          _pageController.previousPage(
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeInOut,
+                          );
+                          setState(() => _currentStep--);
+                        },
+                        child: const Text('Back', style: TextStyle(color: AppTheme.textSecondary)),
+                      ),
+                    const Spacer(),
+                    ElevatedButton(
                       onPressed: () {
-                        _pageController.previousPage(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeInOut,
-                        );
-                        setState(() => _currentStep--);
+                        if (_currentStep == 0 && _nameController.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please enter your full name to proceed.')),
+                          );
+                          return;
+                        }
+                        if (_currentStep == 1) {
+                          if (!_hasApiKey && _apiKeyController.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please provide your free Gemini API key to proceed.')),
+                            );
+                            return;
+                          }
+                          if (_selectedFiles.isEmpty && _selectedFolderPath == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please select at least one document file or folder to continue.')),
+                            );
+                            return;
+                          }
+                        }
+                        _nextStep();
                       },
-                      child: const Text('Back', style: TextStyle(color: AppTheme.textSecondary)),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                      ),
+                      child: Text(_currentStep == 3 ? 'Open Vault' : 'Continue'),
                     ),
-                  const Spacer(),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (_currentStep == 0 && _nameController.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Please enter your full name to proceed.')),
-                        );
-                        return;
-                      }
-                      if (_currentStep == 1 && !_hasApiKey && _apiKeyController.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Please provide your free Gemini API key to proceed.')),
-                        );
-                        return;
-                      }
-                      _nextStep();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                    ),
-                    child: Text(_currentStep == 3 ? 'Open Vault' : 'Continue'),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -221,14 +234,9 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppTheme.darkCard,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppTheme.darkBorder),
-            ),
-            child: const Row(
+          const GlassCard(
+            padding: EdgeInsets.all(14),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(Icons.info_outline, size: 16, color: AppTheme.accentColor),
@@ -270,13 +278,8 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
           const SizedBox(height: 20),
 
           // API Key status / input
-          Container(
+          GlassCard(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.darkCard,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppTheme.darkBorder),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -342,13 +345,8 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
           const SizedBox(height: 18),
 
           // File selection options
-          Container(
+          GlassCard(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.darkCard,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppTheme.darkBorder),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -398,6 +396,28 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                           _selectedFolderPath = picked;
                           _selectedFiles = [];
                         });
+                        // Instantly discover files in the selected folder
+                        final found = await FolderSyncService.scanFolderNative(picked);
+                        if (found.isNotEmpty) {
+                          setState(() => _selectedFiles = found);
+                        } else {
+                          final dir = Directory(picked);
+                          if (await dir.exists()) {
+                            try {
+                              final list = dir
+                                  .listSync(recursive: true)
+                                  .whereType<File>()
+                                  .where((f) {
+                                    final ext = p.extension(f.path).toLowerCase();
+                                    return FolderSyncService.supportedExtensions.contains(ext);
+                                  })
+                                  .toList();
+                              if (list.isNotEmpty) {
+                                setState(() => _selectedFiles = list);
+                              }
+                            } catch (_) {}
+                          }
+                        }
                       }
                     },
                     icon: const Icon(Icons.folder_open, size: 16),
@@ -407,11 +427,30 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
 
                 if (_selectedFiles.isNotEmpty) ...[
                   const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.successColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.successColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: AppTheme.successColor, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${_selectedFiles.length} file(s) ready for vault indexing',
+                          style: const TextStyle(color: AppTheme.successColor, fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   ..._selectedFiles.take(4).map((f) => Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Row(
                       children: [
-                        const Icon(Icons.check, size: 14, color: AppTheme.successColor),
+                        const Icon(Icons.description_outlined, size: 14, color: AppTheme.primaryColor),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
@@ -425,6 +464,28 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                   )),
                   if (_selectedFiles.length > 4)
                     Text('+ ${_selectedFiles.length - 4} more files', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                ] else if (_selectedFolderPath != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.warningColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.warningColor.withValues(alpha: 0.3)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: AppTheme.warningColor, size: 16),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '0 document files found in this folder. Use "Select Document Files Directly" above to select files directly from device.',
+                            style: TextStyle(color: AppTheme.warningColor, fontSize: 11),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -457,13 +518,8 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
             style: TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
           ),
           const SizedBox(height: 36),
-          Container(
+          GlassCard(
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: AppTheme.darkCard,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.darkBorder),
-            ),
             child: Column(
               children: [
                 Icon(
@@ -592,21 +648,16 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
           const SizedBox(height: 24),
 
           // Android System Overlay Permission Toggle
-          Container(
+          GlassCard(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.darkCard,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppTheme.darkBorder),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                const Row(
                   children: [
-                    const Icon(Icons.layers_outlined, color: AppTheme.primaryColor, size: 18),
-                    const SizedBox(width: 8),
-                    const Expanded(
+                    Icon(Icons.layers_outlined, color: AppTheme.primaryColor, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
                       child: Text(
                         'Display Over Other Apps (Chrome)',
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),

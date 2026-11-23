@@ -6,6 +6,7 @@ import '../../core/services/alert_service.dart';
 import '../../core/services/folder_sync_service.dart';
 import '../../core/services/overlay_service.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/glass_card.dart';
 import '../overlay/assistive_ball_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -91,6 +92,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Settings & Privacy'),
       ),
@@ -98,13 +100,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
           // 1. Vault Security Shield Banner
-          Container(
+          GlassCard(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.darkCard,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.darkBorder),
-            ),
+            borderRadius: 18,
             child: Row(
               children: [
                 Container(
@@ -112,7 +110,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   height: 40,
                   decoration: BoxDecoration(
                     color: AppTheme.successColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.successColor.withValues(alpha: 0.3)),
                   ),
                   child: const Icon(Icons.shield_outlined, color: AppTheme.successColor, size: 22),
                 ),
@@ -123,7 +122,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       Text(
                         '100% Local Device Storage',
-                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textPrimary),
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.textPrimary),
                       ),
                       SizedBox(height: 2),
                       Text(
@@ -417,12 +416,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildSettingsCard(List<Widget> children) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.darkCard,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.darkBorder),
-      ),
+    return GlassCard(
+      padding: EdgeInsets.zero,
+      borderRadius: 16,
       child: Column(
         children: children,
       ),

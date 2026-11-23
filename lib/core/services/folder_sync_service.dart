@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -34,6 +35,7 @@ class FolderSyncService {
   static const String _prefFolderPath = 'vault_folder_path';
   static const _uuid = Uuid();
   static const supportedExtensions = {'.pdf', '.png', '.jpg', '.jpeg', '.docx'};
+  static const MethodChannel _storageChannel = MethodChannel('com.example.x/storage_channel');
 
   static Future<String?> getSelectedFolderPath() async {
     final prefs = await SharedPreferences.getInstance();
@@ -43,6 +45,40 @@ class FolderSyncService {
   static Future<void> setSelectedFolderPath(String path) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefFolderPath, path);
+  }
+
+  static Future<bool> hasStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final bool res = await _storageChannel.invokeMethod('hasStoragePermission') ?? false;
+      return res;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<bool> requestStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final bool res = await _storageChannel.invokeMethod('requestStoragePermission') ?? false;
+      return res;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<List<File>> scanFolderNative(String target) async {
+    if (!Platform.isAndroid) return [];
+    try {
+      final List<dynamic>? res = await _storageChannel.invokeMethod('scanFolderNative', {'target': target});
+      if (res != null) {
+        return res
+            .map((item) => File(item.toString()))
+            .where((f) => f.existsSync())
+            .toList();
+      }
+    } catch (_) {}
+    return [];
   }
 
   /// Permanent sandboxed storage location inside app directory
@@ -74,13 +110,34 @@ class FolderSyncService {
 
   /// Lets the user pick a folder via native directory picker and persists it.
   static Future<String?> pickFolder() async {
-    final result = await FilePicker.getDirectoryPath(
-      dialogTitle: 'Select your Documents Vault Folder',
-    );
-    if (result != null && result.isNotEmpty) {
-      await setSelectedFolderPath(result);
-      return result;
+    if (Platform.isAndroid) {
+      final hasPerm = await hasStoragePermission();
+      if (!hasPerm) {
+        await requestStoragePermission();
+      }
     }
+
+    try {
+      final uri = await FilePicker.pickDirectory(
+        dialogTitle: 'Select your Documents Vault Folder',
+      );
+      if (uri != null) {
+        final pathOrUri = uri.scheme == 'file' ? uri.toFilePath() : uri.toString();
+        await setSelectedFolderPath(pathOrUri);
+        return pathOrUri;
+      }
+    } catch (_) {}
+
+    try {
+      final result = await FilePicker.getDirectoryPath(
+        dialogTitle: 'Select your Documents Vault Folder',
+      );
+      if (result != null && result.isNotEmpty) {
+        await setSelectedFolderPath(result);
+        return result;
+      }
+    } catch (_) {}
+
     return null;
   }
 
@@ -96,35 +153,30 @@ class FolderSyncService {
       return;
     }
 
-    final dir = Directory(targetPath);
-    if (!await dir.exists()) {
-      yield SyncProgress(
-        status: 'Folder not found',
-        error: 'The folder at $targetPath is not directly accessible. Try "Select Files Directly".',
-        isCompleted: true,
-      );
-      return;
-    }
-
     yield SyncProgress(status: 'Scanning folder for documents...');
 
     List<File> files = [];
-    try {
-      files = dir
-          .listSync(recursive: false)
-          .whereType<File>()
-          .where((file) {
-            final ext = p.extension(file.path).toLowerCase();
-            return supportedExtensions.contains(ext);
-          })
-          .toList();
-    } catch (e) {
-      yield SyncProgress(
-        status: 'Scoped access restricted',
-        error: 'System restricted access to folder. Please use "Pick Files Directly".',
-        isCompleted: true,
-      );
-      return;
+
+    // 1. Try native Android scanner first (handles SAF tree URIs and native walk)
+    if (Platform.isAndroid) {
+      files = await scanFolderNative(targetPath);
+    }
+
+    // 2. If native scan returned empty, fallback to recursive Dart Directory scan
+    if (files.isEmpty) {
+      final dir = Directory(targetPath);
+      if (await dir.exists()) {
+        try {
+          files = dir
+              .listSync(recursive: true)
+              .whereType<File>()
+              .where((file) {
+                final ext = p.extension(file.path).toLowerCase();
+                return supportedExtensions.contains(ext);
+              })
+              .toList();
+        } catch (_) {}
+      }
     }
 
     if (files.isEmpty) {
