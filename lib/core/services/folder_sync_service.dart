@@ -262,12 +262,28 @@ class FolderSyncService {
 
     final vaultDir = await getPermanentVaultDirectory();
     final existingDocs = await db.getAllDocuments();
-    final existingCanonicalNames = existingDocs.map((d) => canonicalFileName(d.fileName)).toSet();
+    final verifiedCanonicalNames = <String>{};
+    final placeholderDocIds = <String>[];
 
-    // Filter files that are not already indexed - only scan genuinely new files!
+    for (final doc in existingDocs) {
+      final canonical = canonicalFileName(doc.fileName);
+      // Only treat documents as already indexed if they were verified and not placeholder 'OTHER'
+      if (doc.isVerified && doc.docType != 'OTHER' && doc.title != 'OTHER') {
+        verifiedCanonicalNames.add(canonical);
+      } else {
+        placeholderDocIds.add(doc.id);
+      }
+    }
+
+    // Clean up unverified placeholder documents from previous failed scans so they are freshly enriched
+    for (final id in placeholderDocIds) {
+      await db.deleteDocument(id);
+    }
+
+    // Filter files: process new files or previous incomplete/failed placeholders
     final newFiles = files.where((f) {
       final canonical = canonicalFileName(f.path);
-      return !existingCanonicalNames.contains(canonical);
+      return !verifiedCanonicalNames.contains(canonical);
     }).toList();
 
     if (newFiles.isEmpty) {
@@ -329,12 +345,17 @@ class FolderSyncService {
       final docId = _uuid.v4();
       final ext = p.extension(cleanName).replaceAll('.', '').toLowerCase();
 
+      final cleanBase = cleanName.replaceAll(RegExp(r'\.[^.]+$'), '').replaceAll('_', ' ').trim();
+      final initialTitle = _formatDocType(guessedType) != 'OTHER' && _formatDocType(guessedType) != 'Identity Document'
+          ? _formatDocType(guessedType)
+          : (cleanBase.isNotEmpty ? cleanBase : 'Identity Document');
+
       final initialDoc = DocumentModel(
         id: docId,
         personId: defaultPersonId,
         docType: guessedType,
         category: _categoryForDocType(guessedType),
-        title: _formatDocType(guessedType),
+        title: initialTitle,
         filePath: permanentFile.path,
         fileName: cleanName,
         fileType: ext,
@@ -587,7 +608,9 @@ class FolderSyncService {
     if (lower.contains('income')) return 'INCOME_CERTIFICATE';
     if (lower.contains('domicile') || lower.contains('residence') || lower.contains('nativity')) return 'DOMICILE_CERTIFICATE';
     if (lower.contains('birth')) return 'BIRTH_CERTIFICATE';
-    if (lower.contains('marksheet') || lower.contains('degree') || lower.contains('transcript') || lower.contains('certificate')) return 'MARKSHEET';
+    if (lower.contains('passbook') || lower.contains('bank') || lower.contains('statement') || lower.contains('cheque') || lower.contains('sbi') || lower.contains('hdfc')) return 'BANK_PASSBOOK';
+    if (lower.contains('ration') || lower.contains('fsc') || lower.contains('food')) return 'RATION_CARD';
+    if (lower.contains('marksheet') || lower.contains('degree') || lower.contains('transcript') || lower.contains('certificate') || lower.contains('sem')) return 'MARKSHEET';
     return 'OTHER';
   }
 
@@ -598,11 +621,14 @@ class FolderSyncService {
       case 'PASSPORT':
       case 'VOTER_ID':
       case 'BIRTH_CERTIFICATE':
+      case 'RATION_CARD':
         return 'Identity';
       case 'DRIVING_LICENSE':
       case 'VEHICLE_RC':
       case 'VEHICLE_INSURANCE':
         return 'Vehicle';
+      case 'BANK_PASSBOOK':
+        return 'Financial';
       case 'HEALTH_INSURANCE':
         return 'Health';
       case 'EWS_CERTIFICATE':
@@ -615,7 +641,7 @@ class FolderSyncService {
       case 'CLASS_12_MARKSHEET':
         return 'Education';
       default:
-        return 'Other';
+        return 'Identity';
     }
   }
 
@@ -625,6 +651,8 @@ class FolderSyncService {
       case 'CLASS_12_MARKSHEET': return 'Class 12th Marksheet';
       case 'AADHAAR': return 'Aadhaar Card';
       case 'PAN': return 'PAN Card';
+      case 'BANK_PASSBOOK': return 'Bank Passbook';
+      case 'RATION_CARD': return 'Ration Card';
       case 'DRIVING_LICENSE': return 'Driving License';
       case 'PASSPORT': return 'Passport';
       case 'VEHICLE_RC': return 'Vehicle RC';
@@ -637,6 +665,7 @@ class FolderSyncService {
       case 'INCOME_CERTIFICATE': return 'Income Certificate';
       case 'DOMICILE_CERTIFICATE': return 'Domicile Certificate';
       case 'BIRTH_CERTIFICATE': return 'Birth Certificate';
+      case 'OTHER': return 'Identity Document';
       default: return type.replaceAll('_', ' ');
     }
   }

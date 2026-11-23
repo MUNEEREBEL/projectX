@@ -136,7 +136,7 @@ class VisionExtractorService {
     }
 
     final model = GenerativeModel(
-      model: 'gemini-3.5-flash-lite',
+      model: 'gemini-1.5-flash',
       apiKey: apiKey,
       generationConfig: GenerationConfig(
         responseMimeType: 'application/json',
@@ -336,17 +336,19 @@ Output MUST strictly follow this JSON schema:
       contentParts.add(TextPart('$systemPrompt\n\nWord Document (.docx) text content:\n$docxText'));
     } else if (ext == 'pdf') {
       final bytes = await file.readAsBytes();
-      final document = PdfDocument(inputBytes: bytes);
-      final textExtractor = PdfTextExtractor(document);
-      final extractedText = textExtractor.extractText();
-      document.dispose();
+      String pdfText = '';
+      try {
+        final document = PdfDocument(inputBytes: bytes);
+        final textExtractor = PdfTextExtractor(document);
+        pdfText = textExtractor.extractText().trim();
+        document.dispose();
+      } catch (_) {}
 
-      if (extractedText.trim().isNotEmpty) {
-        contentParts.add(TextPart('$systemPrompt\n\nDocument text content:\n$extractedText'));
-      } else {
-        contentParts.add(TextPart(systemPrompt));
-        contentParts.add(DataPart('application/pdf', bytes));
+      contentParts.add(TextPart(systemPrompt));
+      if (pdfText.isNotEmpty) {
+        contentParts.add(TextPart('Document extracted text:\n$pdfText'));
       }
+      contentParts.add(DataPart('application/pdf', bytes));
     } else {
       final bytes = await file.readAsBytes();
       Uint8List uploadBytes = bytes;
@@ -377,12 +379,29 @@ Output MUST strictly follow this JSON schema:
       contentParts.add(DataPart(mimeType, uploadBytes));
     }
 
-    final response = await model.generateContent([
-      Content.multi(contentParts),
-    ]).timeout(
-      const Duration(seconds: 8),
-      onTimeout: () => throw TimeoutException('Gemini OCR timed out (8s limit).'),
-    );
+    GenerateContentResponse? response;
+    try {
+      response = await model.generateContent([
+        Content.multi(contentParts),
+      ]).timeout(
+        const Duration(seconds: 30),
+      );
+    } catch (_) {
+      // Fallback model in case of regional deprecation or quota
+      final fallbackModel = GenerativeModel(
+        model: 'gemini-2.0-flash',
+        apiKey: apiKey,
+        generationConfig: GenerationConfig(
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        ),
+      );
+      response = await fallbackModel.generateContent([
+        Content.multi(contentParts),
+      ]).timeout(
+        const Duration(seconds: 30),
+      );
+    }
 
     final rawJson = response.text;
     if (rawJson == null || rawJson.isEmpty) {
