@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -71,6 +72,7 @@ class VisionExtractorService {
   /// Main extraction method for files (Images or PDFs)
   static Future<ExtractionResult> extractDocument({
     required String filePath,
+    String? referenceCardholderName,
     String? customApiKey,
   }) async {
     final apiKey = customApiKey ?? await getApiKey();
@@ -89,7 +91,12 @@ class VisionExtractorService {
 
     // Support for Grok / xAI vision if key starts with xai-
     if (apiKey.startsWith('xai-')) {
-      return await _extractWithGrok(filePath: filePath, apiKey: apiKey, ext: ext);
+      return await _extractWithGrok(
+        filePath: filePath,
+        apiKey: apiKey,
+        ext: ext,
+        referenceCardholderName: referenceCardholderName,
+      );
     }
 
     final model = GenerativeModel(
@@ -101,11 +108,33 @@ class VisionExtractorService {
       ),
     );
 
-    const systemPrompt = '''
-You are an expert Indian Document Recognition & Verification Engine.
-Analyze this document image/text and extract the structured fields into JSON.
+    final cardholderAnchor = (referenceCardholderName != null && referenceCardholderName.trim().isNotEmpty)
+        ? referenceCardholderName.trim()
+        : 'Unknown';
+
+    final systemPrompt = '''
+You are an expert Indian Government Document & Certificate Verification Engine.
+Analyze this document image/text and extract all structured fields into JSON.
+
+CRITICAL EXTRACTION & ACCURACY RULES:
+1. PRIMARY CARDHOLDER NAME ANCHOR:
+   The primary user of this vault is "$cardholderAnchor".
+   - Official Indian documents frequently use inverted naming (e.g. "Shaik Muneer" vs "Muneer Shaik").
+   - DO NOT hallucinate characters or misread scan artifacts. For example, never misread "Muneer" as "Munfeer". If the document belongs to the cardholder, use the verified spelling "$cardholderAnchor".
+2. ABSOLUTE RULE FOR GOVERNMENT CERTIFICATES (EWS, Caste, Income, Domicile):
+   - The government officer who signed, verified, or issued the certificate (e.g. Tahsildar, Revenue Officer, Sub-Divisional Magistrate / SDM, Revenue Divisional Officer / RDO, District Collector, Registrar) is the ISSUING AUTHORITY, NOT the applicant's father!
+   - NEVER place the signing officer or Tahsildar in "relation_name"! Put them in "issuing_authority".
+   - "relation_name" MUST strictly be the cardholder's actual parent or spouse, explicitly designated with "S/o", "D/o", "W/o", "C/o", "Son of", "Daughter of", or "Father's Name". If none is specified, set "relation_name" to null.
+3. CERTIFICATE NUMBERS & IDENTIFIERS:
+   - For EWS, Caste, Income, Marksheet, or RC, put the official Certificate Number / Application No / Hall Ticket No / Reg No into "id_number".
+4. DATES: Always format dates as YYYY-MM-DD.
 
 Supported document types:
+- EWS_CERTIFICATE (Economically Weaker Section Certificate)
+- CASTE_CERTIFICATE (Community / Caste / Category Certificate)
+- INCOME_CERTIFICATE (Income & Asset Certificate)
+- DOMICILE_CERTIFICATE (Residence / Domicile Certificate)
+- BIRTH_CERTIFICATE (Birth Certificate)
 - AADHAAR (Aadhaar Card)
 - PAN (Permanent Account Number)
 - DRIVING_LICENSE (Indian Driving License)
@@ -130,22 +159,27 @@ Output MUST strictly follow this JSON schema:
 {
   "doc_type": "string",
   "category": "string",
-  "holder_name": "string (Full Name of the cardholder/person)",
-  "relation_name": "string or null (Father/Husband/Spouse name)",
+  "holder_name": "string (Full Name of the cardholder/applicant)",
+  "relation_name": "string or null (ONLY actual Father/Husband/Spouse name. NEVER the Tahsildar or officer)",
   "relation_type": "string or null ('Father', 'Husband', 'Spouse', 'Mother')",
-  "id_number": "string or null (Aadhaar/PAN/DL/Passport/RC number)",
+  "id_number": "string or null (Certificate number, Aadhaar, PAN, DL, Passport, RC number)",
   "dob": "string or null (YYYY-MM-DD format)",
   "gender": "string or null ('Male', 'Female', 'Other')",
   "issue_date": "string or null (YYYY-MM-DD)",
-  "expiry_date": "string or null (YYYY-MM-DD, e.g. license validity, insurance expiry, passport expiry)",
+  "expiry_date": "string or null (YYYY-MM-DD, e.g. valid financial year end, license validity, insurance expiry)",
   "address": "string or null (complete address)",
   "pin_code": "string or null (6-digit PIN code)",
   "extra_fields": {
-    "key": "value"
+    "issuing_authority": "string or null (e.g. Tahsildar, Revenue Officer, SDM)",
+    "issuing_district_or_state": "string or null",
+    "financial_year": "string or null (e.g. 2024-2025)",
+    "valid_year": "string or null (e.g. 2025-2026)",
+    "sub_caste_or_category": "string or null",
+    "annual_family_income": "string or null",
+    "board_or_university": "string or null",
+    "total_marks_or_cgpa": "string or null"
   }
 }
-Extract accurately. If a field is not found or ambiguous, set it to null.
-For dates, always format as YYYY-MM-DD where possible.
 ''';
 
     List<Part> contentParts = [];
@@ -211,7 +245,10 @@ For dates, always format as YYYY-MM-DD where possible.
 
     final response = await model.generateContent([
       Content.multi(contentParts),
-    ]);
+    ]).timeout(
+      const Duration(seconds: 8),
+      onTimeout: () => throw TimeoutException('Gemini OCR timed out (8s limit).'),
+    );
 
     final rawJson = response.text;
     if (rawJson == null || rawJson.isEmpty) {
@@ -226,6 +263,7 @@ For dates, always format as YYYY-MM-DD where possible.
     required String filePath,
     required String apiKey,
     required String ext,
+    String? referenceCardholderName,
   }) async {
     final file = File(filePath);
     final bytes = await file.readAsBytes();

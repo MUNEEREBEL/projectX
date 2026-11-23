@@ -93,8 +93,39 @@ class PersonResolutionEngine {
     return result;
   }
 
-  /// Robust Indian name comparator handling inverted orders, initials, and honorifics:
+  static int levenshtein(String s, String t) {
+    if (s == t) return 0;
+    if (s.isEmpty) return t.length;
+    if (t.isEmpty) return s.length;
+
+    List<int> v0 = List<int>.generate(t.length + 1, (i) => i);
+    List<int> v1 = List<int>.filled(t.length + 1, 0);
+
+    for (int i = 0; i < s.length; i++) {
+      v1[0] = i + 1;
+      for (int j = 0; j < t.length; j++) {
+        int cost = (s[i] == t[j]) ? 0 : 1;
+        v1[j + 1] = [v1[j] + 1, v0[j + 1] + 1, v0[j] + cost].reduce((a, b) => a < b ? a : b);
+      }
+      for (int j = 0; j <= t.length; j++) {
+        v0[j] = v1[j];
+      }
+    }
+    return v0[t.length];
+  }
+
+  static bool _isTokenMatch(String a, String b) {
+    if (a == b) return true;
+    // Allow 1 character typo/OCR hallucination for words of length >= 4 (e.g. Munfeer vs Muneer)
+    if (a.length >= 4 && b.length >= 4 && (a.length - b.length).abs() <= 1) {
+      if (levenshtein(a, b) <= 1) return true;
+    }
+    return false;
+  }
+
+  /// Robust Indian name comparator handling inverted orders, initials, OCR typos and honorifics:
   /// e.g. "Muneer Shaik" == "Shaik Muneer"
+  /// e.g. "Munfeer Shaik" == "Muneer Shaik" (OCR noise correction)
   /// e.g. "Shaik Muneer Ahmed" matches "Muneer Shaik"
   /// e.g. "Md Muneer Shaik" == "Mohammed Shaik Muneer"
   static bool isNameMatch(String nameA, String nameB) {
@@ -105,35 +136,30 @@ class PersonResolutionEngine {
 
     if (tokensA.isEmpty || tokensB.isEmpty) return false;
 
-    final setA = tokensA.toSet();
-    final setB = tokensB.toSet();
+    // Check direct equality or OCR typo equality for tokens
+    int matchingTokens = 0;
+    for (final tA in tokensA) {
+      for (final tB in tokensB) {
+        if (_isTokenMatch(tA, tB)) {
+          matchingTokens++;
+          break;
+        }
+      }
+    }
 
-    // 1. Direct Set Equality (e.g. {"muneer", "shaik"} == {"shaik", "muneer"})
-    if (setA.length == setB.length && setA.containsAll(setB)) {
+    if (matchingTokens >= 2) {
       return true;
     }
 
-    // 2. Multi-token intersection (e.g., {"shaik", "muneer"} subset of {"shaik", "muneer", "ahmed"})
-    final common = setA.intersection(setB);
-    final nonSingleLetterCommon = common.where((t) => t.length > 1).toSet();
-
-    // If they share 2 or more meaningful tokens (e.g., "Shaik" and "Muneer")
-    if (nonSingleLetterCommon.length >= 2) {
-      return true;
+    if (tokensA.length == 1 && tokensB.length == 1) {
+      return _isTokenMatch(tokensA.first, tokensB.first);
     }
 
-    // If one person has a single meaningful word name and matches the only word of the other
-    if (setA.length == 1 && setB.length == 1 && setA.first == setB.first) {
-      return true;
-    }
-
-    // 3. Handle Indian single-letter initials (e.g. "S. Muneer" vs "Shaik Muneer")
+    // Handle Indian single-letter initials (e.g. "S. Muneer" vs "Shaik Muneer")
     if (tokensA.length == 2 && tokensB.length == 2) {
-      // Find the longer token match and initial match
       for (final tA in tokensA) {
         for (final tB in tokensB) {
-          if (tA.length > 2 && tB.length > 2 && tA == tB) {
-            // Found matching main name, check other tokens
+          if (tA.length > 2 && tB.length > 2 && _isTokenMatch(tA, tB)) {
             final remainingA = tokensA.firstWhere((t) => t != tA);
             final remainingB = tokensB.firstWhere((t) => t != tB);
             if (remainingA.isNotEmpty && remainingB.isNotEmpty) {

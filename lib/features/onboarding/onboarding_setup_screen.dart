@@ -32,6 +32,8 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
   double _progressValue = 0.0;
   bool _scanComplete = false;
   bool _hasApiKey = false;
+  final List<String> _logs = [];
+  final ScrollController _logScrollController = ScrollController();
 
   @override
   void initState() {
@@ -54,6 +56,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
     _pageController.dispose();
     _nameController.dispose();
     _apiKeyController.dispose();
+    _logScrollController.dispose();
     super.dispose();
   }
 
@@ -147,6 +150,9 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
         if (mounted) {
           setState(() {
             _scanStatus = progress.status;
+            if (progress.logMessage != null) {
+              _logs.add(progress.logMessage!);
+            }
             if (progress.totalFiles > 0) {
               _progressValue = progress.processedFiles / progress.totalFiles;
             }
@@ -156,9 +162,20 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
             }
           });
 
+          // Auto-scroll logs
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_logScrollController.hasClients) {
+              _logScrollController.animateTo(
+                _logScrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 150),
+                curve: Curves.easeOut,
+              );
+            }
+          });
+
           // Auto-advance to vault when complete
           if (progress.isCompleted) {
-            Future.delayed(const Duration(milliseconds: 1200), () {
+            Future.delayed(const Duration(milliseconds: 1500), () {
               if (mounted) {
                 _completeOnboarding();
               }
@@ -171,6 +188,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
           setState(() {
             _isScanning = false;
             _scanStatus = 'Extraction error: $e';
+            _logs.add('⚠️ Extraction error: $e');
           });
         }
       },
@@ -359,8 +377,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
   Widget _buildStepFolderAutoScan() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListView(
         children: [
           const SizedBox(height: 12),
           const Text(
@@ -377,17 +394,17 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
             'Choose your folder on device. PrivDoc will automatically discover all files (.pdf, .png, .jpg, .docx) and index them into your offline vault.',
             style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.45),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 20),
 
           // Primary Folder Selection Card
           GlassCard(
-            padding: const EdgeInsets.all(22),
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
-                  width: 56,
-                  height: 56,
+                  width: 52,
+                  height: 52,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -405,15 +422,15 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                     color: _scanComplete
                         ? AppTheme.successColor
                         : (_isScanning ? AppTheme.accentColor : AppTheme.primaryColor),
-                    size: 28,
+                    size: 26,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Text(
                   _selectedFolderName != null
                       ? 'Folder: $_selectedFolderName'
                       : 'Choose Monitored Folder',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.white),
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: Colors.white),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 6),
@@ -430,7 +447,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                 ),
 
                 if (_isScanning) ...[
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
@@ -440,14 +457,14 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                       minHeight: 6,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     '${(_progressValue * 100).toInt()}% completed',
                     style: const TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
                   ),
                 ],
 
-                const SizedBox(height: 22),
+                const SizedBox(height: 16),
 
                 if (!_isScanning && !_scanComplete)
                   SizedBox(
@@ -480,7 +497,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   SizedBox(
                     width: double.infinity,
                     height: 48,
@@ -494,7 +511,75 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
             ),
           ),
 
-          const Spacer(),
+          // LIVE REAL-TIME API & VAULT LOGS
+          if (_logs.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            GlassCard(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.terminal, size: 14, color: AppTheme.accentColor),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'LIVE VAULT & AI EXECUTION LOGS',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textMuted,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (_isScanning)
+                        const SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(strokeWidth: 1.5, color: AppTheme.accentColor),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    height: 140,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.glassBorder),
+                    ),
+                    child: ListView.builder(
+                      controller: _logScrollController,
+                      itemCount: _logs.length,
+                      itemBuilder: (context, index) {
+                        final line = _logs[index];
+                        final isWarn = line.contains('⚠️');
+                        final isGood = line.contains('✓') || line.contains('🎉') || line.contains('💾');
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Text(
+                            line,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontFamily: 'monospace',
+                              height: 1.3,
+                              color: isWarn
+                                  ? AppTheme.warningColor
+                                  : (isGood ? AppTheme.successColor : AppTheme.textSecondary),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
 
           if (!_isScanning)
             Center(
@@ -504,7 +589,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                 label: const Text('Back to Cardholder Name', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
               ),
             ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
         ],
       ),
     );

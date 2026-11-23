@@ -2,6 +2,8 @@ package com.example.x
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -146,11 +148,7 @@ class MainActivity : FlutterActivity() {
                             val ext = name.substringAfterLast('.', "").lowercase()
                             if (ext in supportedExts) {
                                 val cachedFile = File(applicationContext.cacheDir, "vault_staging_${System.currentTimeMillis()}_$name")
-                                applicationContext.contentResolver.openInputStream(child.uri)?.use { input ->
-                                    cachedFile.outputStream().use { output ->
-                                        input.copyTo(output)
-                                    }
-                                }
+                                copyOrDownsample(child.uri, cachedFile, ext)
                                 matchingPaths.add(cachedFile.absolutePath)
                             }
                         }
@@ -200,5 +198,39 @@ class MainActivity : FlutterActivity() {
         }
 
         return matchingPaths
+    }
+
+    private fun copyOrDownsample(uri: Uri, cachedFile: File, ext: String) {
+        if (ext in setOf("jpg", "jpeg", "png")) {
+            try {
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                applicationContext.contentResolver.openInputStream(uri)?.use { input ->
+                    BitmapFactory.decodeStream(input, null, options)
+                }
+                val maxDim = maxOf(options.outWidth, options.outHeight)
+                var sampleSize = 1
+                if (maxDim > 1280) {
+                    sampleSize = maxDim / 1280
+                }
+                val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                val bitmap = applicationContext.contentResolver.openInputStream(uri)?.use { input ->
+                    BitmapFactory.decodeStream(input, null, decodeOptions)
+                }
+                if (bitmap != null) {
+                    cachedFile.outputStream().use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 75, out)
+                    }
+                    bitmap.recycle()
+                    return
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Direct stream copy
+        applicationContext.contentResolver.openInputStream(uri)?.use { input ->
+            cachedFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
     }
 }

@@ -30,6 +30,11 @@ void main() {
       expect(PersonResolutionEngine.isNameMatch('Muneer S', 'Shaik Muneer'), isTrue);
     });
 
+    test('Handles OCR noise and minor letter hallucinations (Munfeer vs Muneer)', () {
+      expect(PersonResolutionEngine.isNameMatch('Munfeer Shaik', 'Muneer Shaik'), isTrue);
+      expect(PersonResolutionEngine.isNameMatch('Shaik Munfeer', 'Muneer Shaik'), isTrue);
+    });
+
     test('Rejects different people with same last name', () {
       expect(PersonResolutionEngine.isNameMatch('Rahul Sharma', 'Amit Sharma'), isFalse);
       expect(PersonResolutionEngine.isNameMatch('Suresh Kumar', 'Ramesh Kumar'), isFalse);

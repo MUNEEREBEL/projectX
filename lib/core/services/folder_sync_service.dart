@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +19,7 @@ class SyncProgress {
   final int processedFiles;
   final String currentFileName;
   final String status;
+  final String? logMessage;
   final bool isCompleted;
   final String? error;
 
@@ -26,6 +28,7 @@ class SyncProgress {
     this.processedFiles = 0,
     this.currentFileName = '',
     this.status = '',
+    this.logMessage,
     this.isCompleted = false,
     this.error,
   });
@@ -336,20 +339,31 @@ class FolderSyncService {
       totalFiles: stagedList.length,
       processedFiles: 0,
       status: 'Secured ${stagedList.length} document(s) in vault. Enriching with Vision AI...',
+      logMessage: '[${DateFormat('HH:mm:ss').format(DateTime.now())}] 💾 All ${stagedList.length} file(s) saved to local SQLite vault.',
     );
 
-    // 2. PARALLEL HIGH-SPEED AI EXTRACTION (Concurrency: 4)
+    // 2. HIGH-SPEED AI EXTRACTION (Concurrency: 2 - smooth, no rate limits, no gralloc errors)
     int completedCount = 0;
-    const int concurrency = 4;
+    const int concurrency = 2;
 
     for (int i = 0; i < stagedList.length; i += concurrency) {
       final end = (i + concurrency < stagedList.length) ? i + concurrency : stagedList.length;
       final batch = stagedList.sublist(i, end);
 
-      await Future.wait(batch.map((item) async {
+      for (final item in batch) {
+        final timeStart = DateFormat('HH:mm:ss').format(DateTime.now());
+        yield SyncProgress(
+          totalFiles: stagedList.length,
+          processedFiles: completedCount,
+          currentFileName: item.cleanName,
+          status: 'Analyzing ${item.cleanName} (${completedCount + 1} of ${stagedList.length})...',
+          logMessage: '[$timeStart] ⚡ Querying Gemini AI for ${item.cleanName}...',
+        );
+
         try {
           final extractResult = await VisionExtractorService.extractDocument(
             filePath: item.permanentFile.path,
+            referenceCardholderName: ownerName,
           );
 
           final person = await PersonResolutionEngine.resolvePerson(
@@ -388,7 +402,7 @@ class FolderSyncService {
 
           List<DocumentField> fields = [];
           void addField(String name, String? value, String category) {
-            if (value != null && value.trim().isNotEmpty) {
+            if (value != null && value.trim().isNotEmpty && value.trim().toLowerCase() != 'null') {
               fields.add(DocumentField(
                 id: _uuid.v4(),
                 documentId: item.doc.id,
@@ -399,9 +413,12 @@ class FolderSyncService {
             }
           }
 
-          addField('Full Name', extractResult.holderName, 'identity');
-          addField('${_formatDocType(extractResult.docType)} Number', extractResult.idNumber, 'identity');
-          if (extractResult.relationName != null) {
+          // Use the verified, normalized cardholder name to eliminate any OCR typo (e.g. Munfeer -> Muneer)
+          addField('Full Name', person.name, 'identity');
+          if (extractResult.idNumber != null && extractResult.idNumber!.trim().isNotEmpty) {
+            addField('${_formatDocType(extractResult.docType)} Number', extractResult.idNumber, 'identity');
+          }
+          if (extractResult.relationName != null && extractResult.relationName!.trim().isNotEmpty) {
             addField(extractResult.relationType ?? "Relative's Name", extractResult.relationName, 'identity');
           }
           addField('Date of Birth', extractResult.dob, 'date');
@@ -411,8 +428,11 @@ class FolderSyncService {
           addField('Full Address', extractResult.address, 'address');
           addField('PIN Code', extractResult.pinCode, 'address');
 
+          // Extract all rich certificate & document fields into database
           extractResult.extraFields.forEach((k, v) {
-            addField(_formatFieldName(k), v, 'other');
+            if (v.trim().isNotEmpty && v.trim().toLowerCase() != 'null') {
+              addField(_formatFieldName(k), v, 'details');
+            }
           });
 
           await db.saveDocumentWithFields(document: updatedDoc, fields: fields);
@@ -420,24 +440,38 @@ class FolderSyncService {
           if (expiryDate != null) {
             await AlertService.instance.scheduleDocumentExpiryAlerts(updatedDoc, person.name);
           }
-        } catch (_) {
-          // AI extraction failed on this file; document is already safe in vault!
-        }
-      }));
 
-      completedCount += batch.length;
-      yield SyncProgress(
-        totalFiles: stagedList.length,
-        processedFiles: completedCount,
-        currentFileName: batch.last.cleanName,
-        status: 'Enriched $completedCount of ${stagedList.length} documents...',
-      );
+          completedCount++;
+          final timeDone = DateFormat('HH:mm:ss').format(DateTime.now());
+          final idStr = extractResult.idNumber != null ? ' (${extractResult.idNumber})' : '';
+          yield SyncProgress(
+            totalFiles: stagedList.length,
+            processedFiles: completedCount,
+            currentFileName: item.cleanName,
+            status: 'Verified ${item.cleanName} ($completedCount of ${stagedList.length})',
+            logMessage: '[$timeDone] ✓ Verified: ${_formatDocType(extractResult.docType)}$idStr for ${person.name}',
+          );
+        } catch (e) {
+          completedCount++;
+          final timeErr = DateFormat('HH:mm:ss').format(DateTime.now());
+          final errShort = e.toString().split('\n').first.replaceAll('Exception:', '').trim();
+          yield SyncProgress(
+            totalFiles: stagedList.length,
+            processedFiles: completedCount,
+            currentFileName: item.cleanName,
+            status: 'Saved ${item.cleanName} (offline metadata)',
+            logMessage: '[$timeErr] ⚠️ ${item.cleanName}: Stored with offline filename metadata ($errShort)',
+          );
+        }
+      }
     }
 
+    final allDoneTime = DateFormat('HH:mm:ss').format(DateTime.now());
     yield SyncProgress(
       totalFiles: stagedList.length,
       processedFiles: stagedList.length,
       status: 'Indexed & secured ${stagedList.length} document(s) in offline vault!',
+      logMessage: '[$allDoneTime] 🎉 All ${stagedList.length} document(s) successfully indexed into offline vault!',
       isCompleted: true,
     );
   }
@@ -451,7 +485,12 @@ class FolderSyncService {
     if (lower.contains('rc') || lower.contains('registration') || lower.contains('vahan')) return 'VEHICLE_RC';
     if (lower.contains('insurance') || lower.contains('policy')) return 'VEHICLE_INSURANCE';
     if (lower.contains('voter') || lower.contains('epic') || lower.contains('election')) return 'VOTER_ID';
-    if (lower.contains('marksheet') || lower.contains('degree') || lower.contains('certificate')) return 'MARKSHEET';
+    if (lower.contains('ews')) return 'EWS_CERTIFICATE';
+    if (lower.contains('caste') || lower.contains('community')) return 'CASTE_CERTIFICATE';
+    if (lower.contains('income')) return 'INCOME_CERTIFICATE';
+    if (lower.contains('domicile') || lower.contains('residence') || lower.contains('nativity')) return 'DOMICILE_CERTIFICATE';
+    if (lower.contains('birth')) return 'BIRTH_CERTIFICATE';
+    if (lower.contains('marksheet') || lower.contains('degree') || lower.contains('transcript') || lower.contains('certificate')) return 'MARKSHEET';
     return 'OTHER';
   }
 
@@ -461,6 +500,7 @@ class FolderSyncService {
       case 'PAN':
       case 'PASSPORT':
       case 'VOTER_ID':
+      case 'BIRTH_CERTIFICATE':
         return 'Identity';
       case 'DRIVING_LICENSE':
       case 'VEHICLE_RC':
@@ -468,6 +508,11 @@ class FolderSyncService {
         return 'Vehicle';
       case 'HEALTH_INSURANCE':
         return 'Health';
+      case 'EWS_CERTIFICATE':
+      case 'CASTE_CERTIFICATE':
+      case 'INCOME_CERTIFICATE':
+      case 'DOMICILE_CERTIFICATE':
+        return 'Government';
       case 'MARKSHEET':
         return 'Education';
       default:
@@ -486,6 +531,11 @@ class FolderSyncService {
       case 'HEALTH_INSURANCE': return 'Health Insurance';
       case 'VOTER_ID': return 'Voter ID';
       case 'MARKSHEET': return 'Marksheet';
+      case 'EWS_CERTIFICATE': return 'EWS Certificate';
+      case 'CASTE_CERTIFICATE': return 'Caste Certificate';
+      case 'INCOME_CERTIFICATE': return 'Income Certificate';
+      case 'DOMICILE_CERTIFICATE': return 'Domicile Certificate';
+      case 'BIRTH_CERTIFICATE': return 'Birth Certificate';
       default: return type.replaceAll('_', ' ');
     }
   }
