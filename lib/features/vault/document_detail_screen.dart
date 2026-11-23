@@ -387,6 +387,67 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                         ),
                       );
                     }),
+
+                  if (doc.rawText != null && doc.rawText!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Center(
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.code, size: 16, color: AppTheme.accentColor),
+                        label: const Text('View Raw AI Vision JSON', style: TextStyle(color: AppTheme.accentColor, fontSize: 12, fontWeight: FontWeight.w600)),
+                        onPressed: () {
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: const Color(0xFF0F172A),
+                            isScrollControlled: true,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                            ),
+                            builder: (ctx) {
+                              return DraggableScrollableSheet(
+                                initialChildSize: 0.6,
+                                minChildSize: 0.3,
+                                maxChildSize: 0.9,
+                                expand: false,
+                                builder: (_, scrollController) {
+                                  return Padding(
+                                    padding: const EdgeInsets.all(16.0),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.data_object, color: AppTheme.accentColor, size: 18),
+                                            const SizedBox(width: 8),
+                                            const Text('Raw Stored AI Response (SQLite)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                            const Spacer(),
+                                            IconButton(
+                                              icon: const Icon(Icons.copy, size: 18, color: AppTheme.accentColor),
+                                              tooltip: 'Copy JSON',
+                                              onPressed: () => _copyValue('raw_json', doc.rawText!),
+                                            ),
+                                          ],
+                                        ),
+                                        Divider(color: AppTheme.glassBorder),
+                                        Expanded(
+                                          child: SingleChildScrollView(
+                                            controller: scrollController,
+                                            child: SelectableText(
+                                              doc.rawText!,
+                                              style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: AppTheme.textSecondary, height: 1.4),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ],
               ),
       ),
