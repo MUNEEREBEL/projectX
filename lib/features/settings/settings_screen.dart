@@ -285,7 +285,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: OutlinedButton(
                 onPressed: () async {
                   await AlertService.instance.showQuickNotification(
-                    title: 'PrivDoc Renewal Alert',
+                    title: 'Project X Renewal Alert',
                     body: 'Your local offline expiry radar is running and active.',
                   );
                   if (context.mounted) {

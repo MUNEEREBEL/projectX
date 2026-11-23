@@ -46,20 +46,20 @@ void main() async {
 
   runApp(
     ProviderScope(
-      child: PrivDocApp(isOnboardingCompleted: isOnboardingCompleted),
+      child: ProjectXApp(isOnboardingCompleted: isOnboardingCompleted),
     ),
   );
 }
 
-class PrivDocApp extends StatelessWidget {
+class ProjectXApp extends StatelessWidget {
   final bool isOnboardingCompleted;
 
-  const PrivDocApp({super.key, required this.isOnboardingCompleted});
+  const ProjectXApp({super.key, required this.isOnboardingCompleted});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PrivDoc AI',
+      title: 'Project X',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.lightTheme,

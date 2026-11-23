@@ -423,7 +423,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Choose your folder on device. PrivDoc will automatically discover all files (.pdf, .png, .jpg, .docx) and index them into your offline vault.',
+            'Choose your folder on device. Project X will automatically discover all files (.pdf, .png, .jpg, .docx) and index them into your offline vault.',
             style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.45),
           ),
           const SizedBox(height: 20),

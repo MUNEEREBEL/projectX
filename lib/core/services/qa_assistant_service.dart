@@ -122,7 +122,7 @@ class QAAssistantService {
         );
 
         final systemInstructionContent = Content.system('''
-You are PrivDoc Assistant, a personal document intelligence assistant.
+You are Project X Assistant, a personal document intelligence assistant.
 You have access to the user's verified local family vault.
 
 CRITICAL RULES:

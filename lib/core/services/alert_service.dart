@@ -101,7 +101,7 @@ class AlertService {
     await init();
     const androidDetails = AndroidNotificationDetails(
       'general_alerts_channel',
-      'PrivDoc Notifications',
+      'Project X Notifications',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
     );

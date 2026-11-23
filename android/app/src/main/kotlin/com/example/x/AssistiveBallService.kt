@@ -39,7 +39,7 @@ class AssistiveBallService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "PrivDoc Assistive Copilot",
+                "Project X Assistive Copilot",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Shows active status of the floating form assistive ball."
@@ -62,7 +62,7 @@ class AssistiveBallService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("PrivDoc Copilot Active")
+            .setContentTitle("Project X Copilot Active")
             .setContentText("Tap to open 1-tap cardholder details & file upload")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)

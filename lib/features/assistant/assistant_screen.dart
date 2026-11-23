@@ -30,7 +30,7 @@ class AssistantScreen extends StatefulWidget {
 class _AssistantScreenState extends State<AssistantScreen> {
   final List<ChatMessage> _messages = [
     ChatMessage(
-      text: 'PrivDoc Intelligence Assistant ready. Ask for any policy numbers, expiry dates, registered addresses, or cardholder details.',
+      text: 'Project X Intelligence Assistant ready. Ask for any policy numbers, expiry dates, registered addresses, or cardholder details.',
       isUser: false,
     ),
   ];
