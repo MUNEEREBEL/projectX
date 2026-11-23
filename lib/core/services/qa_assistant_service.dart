@@ -52,7 +52,7 @@ class QAAssistantService {
         }
 
         final model = GenerativeModel(
-          model: 'gemini-1.5-flash',
+          model: 'gemini-3.5-flash-lite',
           apiKey: apiKey,
           systemInstruction: Content.system('''
 You are PrivDoc Assistant, a personal document intelligence copilot.

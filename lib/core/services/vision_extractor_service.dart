@@ -86,8 +86,14 @@ class VisionExtractorService {
     }
 
     final ext = filePath.split('.').last.toLowerCase();
+
+    // Support for Grok / xAI vision if key starts with xai-
+    if (apiKey.startsWith('xai-')) {
+      return await _extractWithGrok(filePath: filePath, apiKey: apiKey, ext: ext);
+    }
+
     final model = GenerativeModel(
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.5-flash-lite',
       apiKey: apiKey,
       generationConfig: GenerationConfig(
         responseMimeType: 'application/json',
@@ -152,7 +158,6 @@ For dates, always format as YYYY-MM-DD where possible.
       for (final archiveFile in archive) {
         if (archiveFile.name == 'word/document.xml') {
           final xmlStr = utf8.decode(archiveFile.content, allowMalformed: true);
-          // Extract text between xml tags
           docxText = xmlStr.replaceAll(RegExp(r'<w:p[ >]'), '\n')
                            .replaceAll(RegExp(r'<[^>]+>'), ' ')
                            .replaceAll(RegExp(r'\s+'), ' ')
@@ -162,7 +167,6 @@ For dates, always format as YYYY-MM-DD where possible.
       }
       contentParts.add(TextPart('$systemPrompt\n\nWord Document (.docx) text content:\n$docxText'));
     } else if (ext == 'pdf') {
-      // PDF handling: read text from PDF directly (0 internet bandwidth used)
       final bytes = await file.readAsBytes();
       final document = PdfDocument(inputBytes: bytes);
       final textExtractor = PdfTextExtractor(document);
@@ -172,33 +176,33 @@ For dates, always format as YYYY-MM-DD where possible.
       if (extractedText.trim().isNotEmpty) {
         contentParts.add(TextPart('$systemPrompt\n\nDocument text content:\n$extractedText'));
       } else {
-        // Fallback for scanned PDF
         contentParts.add(TextPart(systemPrompt));
         contentParts.add(DataPart('application/pdf', bytes));
       }
     } else {
-      // High-speed image handling with 95%+ bandwidth reduction
       final bytes = await file.readAsBytes();
       Uint8List uploadBytes = bytes;
       String mimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
 
-      try {
-        final decoded = img.decodeImage(bytes);
-        if (decoded != null) {
-          img.Image targetImg = decoded;
-          // Downsample high-res camera photos (> 1280px) to cut payload from 15MB to ~80KB
-          if (decoded.width > 1280 || decoded.height > 1280) {
-            if (decoded.width > decoded.height) {
-              targetImg = img.copyResize(decoded, width: 1280);
-            } else {
-              targetImg = img.copyResize(decoded, height: 1280);
+      // Only downsample if file size is large (> 400KB) to avoid unnecessary CPU decoding
+      if (bytes.length > 400 * 1024) {
+        try {
+          final decoded = img.decodeImage(bytes);
+          if (decoded != null) {
+            img.Image targetImg = decoded;
+            if (decoded.width > 1024 || decoded.height > 1024) {
+              if (decoded.width > decoded.height) {
+                targetImg = img.copyResize(decoded, width: 1024);
+              } else {
+                targetImg = img.copyResize(decoded, height: 1024);
+              }
             }
+            uploadBytes = Uint8List.fromList(img.encodeJpg(targetImg, quality: 70));
+            mimeType = 'image/jpeg';
           }
-          uploadBytes = Uint8List.fromList(img.encodeJpg(targetImg, quality: 75));
-          mimeType = 'image/jpeg';
+        } catch (_) {
+          uploadBytes = bytes;
         }
-      } catch (_) {
-        uploadBytes = bytes;
       }
 
       contentParts.add(TextPart(systemPrompt));
@@ -214,6 +218,58 @@ For dates, always format as YYYY-MM-DD where possible.
       throw Exception('Empty response from AI vision model.');
     }
 
+    return _parseExtractionJson(rawJson);
+  }
+
+  /// Grok (xAI) vision endpoint handler
+  static Future<ExtractionResult> _extractWithGrok({
+    required String filePath,
+    required String apiKey,
+    required String ext,
+  }) async {
+    final file = File(filePath);
+    final bytes = await file.readAsBytes();
+    final base64Image = base64Encode(bytes);
+    final mimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
+
+    final client = HttpClient();
+    final request = await client.postUrl(Uri.parse('https://api.x.ai/v1/chat/completions'));
+    request.headers.set('Content-Type', 'application/json');
+    request.headers.set('Authorization', 'Bearer $apiKey');
+
+    final body = jsonEncode({
+      'model': 'grok-2-vision-1212',
+      'messages': [
+        {
+          'role': 'user',
+          'content': [
+            {
+              'type': 'text',
+              'text': 'Extract Indian document identity details into strict JSON: doc_type, category, holder_name, relation_name, id_number, dob, gender, issue_date, expiry_date, address, pin_code.'
+            },
+            {
+              'type': 'image_url',
+              'image_url': {'url': 'data:$mimeType;base64,$base64Image'}
+            }
+          ]
+        }
+      ],
+      'temperature': 0.1,
+    });
+
+    request.write(body);
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    client.close();
+
+    final parsed = jsonDecode(responseBody);
+    final content = parsed['choices'][0]['message']['content'] as String;
+    final match = RegExp(r'\{[\s\S]*\}').firstMatch(content);
+    final rawJson = match != null ? match.group(0)! : content;
+    return _parseExtractionJson(rawJson);
+  }
+
+  static ExtractionResult _parseExtractionJson(String rawJson) {
     try {
       final Map<String, dynamic> data = jsonDecode(rawJson);
       

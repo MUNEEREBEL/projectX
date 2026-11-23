@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/document_field.dart';
 import '../../models/document_model.dart';
-import '../config/app_config.dart';
+import '../../models/person.dart';
 import '../database/database_service.dart';
 import 'alert_service.dart';
 import 'person_resolution_engine.dart';
@@ -232,17 +232,13 @@ class FolderSyncService {
 
   /// Imports and indexes a list of files into permanent vault storage
   static Stream<SyncProgress> syncFiles(List<File> files) async* {
-    final apiKey = await AppConfig.getApiKey();
-    if (apiKey == null || apiKey.isEmpty) {
-      yield SyncProgress(
-        status: 'API Key Not Configured',
-        error: 'Please add your free Gemini API key in Settings or .env before scanning.',
-        isCompleted: true,
-      );
+    if (files.isEmpty) {
+      yield SyncProgress(status: 'No files to index', isCompleted: true);
       return;
     }
 
     final db = DatabaseService.instance;
+    final vaultDir = await getPermanentVaultDirectory();
     final existingDocs = await db.getAllDocuments();
     final existingFileNames = existingDocs.map((d) => d.fileName.toLowerCase()).toSet();
 
@@ -262,8 +258,28 @@ class FolderSyncService {
       return;
     }
 
-    final vaultDir = await getPermanentVaultDirectory();
-    int processedCount = 0;
+    // Ensure at least 1 person exists for initial ownership
+    final persons = await db.getAllPersons();
+    String defaultPersonId;
+    String ownerName = 'Primary Cardholder';
+    final prefs = await SharedPreferences.getInstance();
+    ownerName = prefs.getString('vault_owner_name') ?? 'Primary Cardholder';
+
+    if (persons.isEmpty) {
+      defaultPersonId = _uuid.v4();
+      await db.upsertPerson(Person(
+        id: defaultPersonId,
+        name: ownerName,
+        relationship: 'Self',
+        avatarColorIndex: 0,
+      ));
+    } else {
+      defaultPersonId = persons.first.id;
+      ownerName = persons.first.name;
+    }
+
+    // 1. INSTANT LOCAL PERSISTENCE: Save all documents to SQLite immediately!
+    final List<({File permanentFile, DocumentModel doc, String cleanName})> stagedList = [];
 
     for (final file in newFiles) {
       final originalName = p.basename(file.path);
@@ -274,125 +290,189 @@ class FolderSyncService {
           cleanName = parts.sublist(2).join('_');
         }
       }
-      processedCount++;
 
-      yield SyncProgress(
-        totalFiles: newFiles.length,
-        processedFiles: processedCount,
-        currentFileName: cleanName,
-        status: 'Analyzing $cleanName ($processedCount of ${newFiles.length})...',
+      final safeBaseName = cleanName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final permanentFilePath = p.join(vaultDir.path, '${DateTime.now().millisecondsSinceEpoch}_$safeBaseName');
+      final permanentFile = await file.copy(permanentFilePath);
+
+      final guessedType = _guessDocTypeFromFilename(cleanName);
+      final docId = _uuid.v4();
+      final ext = p.extension(cleanName).replaceAll('.', '').toLowerCase();
+
+      final initialDoc = DocumentModel(
+        id: docId,
+        personId: defaultPersonId,
+        docType: guessedType,
+        category: _categoryForDocType(guessedType),
+        title: '$ownerName - ${_formatDocType(guessedType)}',
+        filePath: permanentFile.path,
+        fileName: cleanName,
+        fileType: ext,
+        isVerified: false,
       );
 
-      try {
-        // Copy to permanent app storage to ensure 100% offline persistence
-        final safeBaseName = cleanName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-        final permanentFilePath = p.join(vaultDir.path, '${DateTime.now().millisecondsSinceEpoch}_$safeBaseName');
-        final permanentFile = await file.copy(permanentFilePath);
+      // Save to SQLite right now! (Guarantees vault is NEVER empty!)
+      await db.saveDocumentWithFields(
+        document: initialDoc,
+        fields: [
+          DocumentField(
+            id: _uuid.v4(),
+            documentId: docId,
+            fieldName: 'File Name',
+            fieldValue: cleanName,
+            fieldCategory: 'general',
+          ),
+        ],
+      );
 
-        // 1. Extract details via Vision AI using permanent file
-        final extractResult = await VisionExtractorService.extractDocument(
-          filePath: permanentFile.path,
-        );
-
-        // 2. Resolve or create Person with Indian Name Disambiguation
-        final person = await PersonResolutionEngine.resolvePerson(
-          holderName: extractResult.holderName,
-          dob: extractResult.dob,
-          gender: extractResult.gender,
-          relationName: extractResult.relationName,
-          relationType: extractResult.relationType,
-        );
-
-        // 3. Construct DocumentModel
-        final docId = _uuid.v4();
-        final ext = p.extension(permanentFile.path).replaceAll('.', '').toLowerCase();
-
-        DateTime? issueDate;
-        if (extractResult.issueDate != null) {
-          issueDate = DateTime.tryParse(extractResult.issueDate!);
-        }
-
-        DateTime? expiryDate;
-        if (extractResult.expiryDate != null) {
-          expiryDate = DateTime.tryParse(extractResult.expiryDate!);
-        }
-
-        final docTitle = '${person.name} - ${_formatDocType(extractResult.docType)}';
-
-        final document = DocumentModel(
-          id: docId,
-          personId: person.id,
-          docType: extractResult.docType,
-          category: extractResult.category,
-          title: docTitle,
-          idNumber: extractResult.idNumber,
-          issueDate: issueDate,
-          expiryDate: expiryDate,
-          filePath: permanentFile.path,
-          fileName: cleanName,
-          fileType: ext,
-          rawText: extractResult.rawResponse,
-          isVerified: extractResult.isChecksumValid,
-        );
-
-        // 4. Construct Field List
-        List<DocumentField> fields = [];
-
-        void addField(String name, String? value, String category) {
-          if (value != null && value.trim().isNotEmpty) {
-            fields.add(
-              DocumentField(
-                id: _uuid.v4(),
-                documentId: docId,
-                fieldName: name,
-                fieldValue: value.trim(),
-                fieldCategory: category,
-              ),
-            );
-          }
-        }
-
-        addField('Full Name', extractResult.holderName, 'identity');
-        addField('${_formatDocType(extractResult.docType)} Number', extractResult.idNumber, 'identity');
-        if (extractResult.relationName != null) {
-          addField(extractResult.relationType ?? "Relative's Name", extractResult.relationName, 'identity');
-        }
-        addField('Date of Birth', extractResult.dob, 'date');
-        addField('Gender', extractResult.gender, 'identity');
-        addField('Issue Date', extractResult.issueDate, 'date');
-        addField('Expiry Date', extractResult.expiryDate, 'date');
-        addField('Full Address', extractResult.address, 'address');
-        addField('PIN Code', extractResult.pinCode, 'address');
-
-        // Extra dynamic fields
-        extractResult.extraFields.forEach((k, v) {
-          addField(_formatFieldName(k), v, 'other');
-        });
-
-        // 5. Save to Local SQLite
-        await db.saveDocumentWithFields(document: document, fields: fields);
-
-        // 6. Schedule Expiry Alerts if applicable
-        if (expiryDate != null) {
-          await AlertService.instance.scheduleDocumentExpiryAlerts(document, person.name);
-        }
-      } catch (e) {
-        yield SyncProgress(
-          totalFiles: newFiles.length,
-          processedFiles: processedCount,
-          currentFileName: originalName,
-          status: 'Error processing $originalName: $e',
-          error: e.toString(),
-        );
-      }
+      stagedList.add((
+        permanentFile: permanentFile,
+        doc: initialDoc,
+        cleanName: cleanName,
+      ));
     }
 
     yield SyncProgress(
-      totalFiles: newFiles.length,
-      processedFiles: newFiles.length,
-      status: 'Stored & indexed ${newFiles.length} document(s) permanently in vault!',
+      totalFiles: stagedList.length,
+      processedFiles: 0,
+      status: 'Secured ${stagedList.length} document(s) in vault. Enriching with Vision AI...',
+    );
+
+    // 2. PARALLEL HIGH-SPEED AI EXTRACTION (Concurrency: 4)
+    int completedCount = 0;
+    const int concurrency = 4;
+
+    for (int i = 0; i < stagedList.length; i += concurrency) {
+      final end = (i + concurrency < stagedList.length) ? i + concurrency : stagedList.length;
+      final batch = stagedList.sublist(i, end);
+
+      await Future.wait(batch.map((item) async {
+        try {
+          final extractResult = await VisionExtractorService.extractDocument(
+            filePath: item.permanentFile.path,
+          );
+
+          final person = await PersonResolutionEngine.resolvePerson(
+            holderName: extractResult.holderName,
+            dob: extractResult.dob,
+            gender: extractResult.gender,
+            relationName: extractResult.relationName,
+            relationType: extractResult.relationType,
+          );
+
+          DateTime? issueDate;
+          if (extractResult.issueDate != null) {
+            issueDate = DateTime.tryParse(extractResult.issueDate!);
+          }
+
+          DateTime? expiryDate;
+          if (extractResult.expiryDate != null) {
+            expiryDate = DateTime.tryParse(extractResult.expiryDate!);
+          }
+
+          final updatedDoc = DocumentModel(
+            id: item.doc.id,
+            personId: person.id,
+            docType: extractResult.docType,
+            category: extractResult.category,
+            title: '${person.name} - ${_formatDocType(extractResult.docType)}',
+            idNumber: extractResult.idNumber,
+            issueDate: issueDate,
+            expiryDate: expiryDate,
+            filePath: item.permanentFile.path,
+            fileName: item.cleanName,
+            fileType: item.doc.fileType,
+            rawText: extractResult.rawResponse,
+            isVerified: extractResult.isChecksumValid,
+          );
+
+          List<DocumentField> fields = [];
+          void addField(String name, String? value, String category) {
+            if (value != null && value.trim().isNotEmpty) {
+              fields.add(DocumentField(
+                id: _uuid.v4(),
+                documentId: item.doc.id,
+                fieldName: name,
+                fieldValue: value.trim(),
+                fieldCategory: category,
+              ));
+            }
+          }
+
+          addField('Full Name', extractResult.holderName, 'identity');
+          addField('${_formatDocType(extractResult.docType)} Number', extractResult.idNumber, 'identity');
+          if (extractResult.relationName != null) {
+            addField(extractResult.relationType ?? "Relative's Name", extractResult.relationName, 'identity');
+          }
+          addField('Date of Birth', extractResult.dob, 'date');
+          addField('Gender', extractResult.gender, 'identity');
+          addField('Issue Date', extractResult.issueDate, 'date');
+          addField('Expiry Date', extractResult.expiryDate, 'date');
+          addField('Full Address', extractResult.address, 'address');
+          addField('PIN Code', extractResult.pinCode, 'address');
+
+          extractResult.extraFields.forEach((k, v) {
+            addField(_formatFieldName(k), v, 'other');
+          });
+
+          await db.saveDocumentWithFields(document: updatedDoc, fields: fields);
+
+          if (expiryDate != null) {
+            await AlertService.instance.scheduleDocumentExpiryAlerts(updatedDoc, person.name);
+          }
+        } catch (_) {
+          // AI extraction failed on this file; document is already safe in vault!
+        }
+      }));
+
+      completedCount += batch.length;
+      yield SyncProgress(
+        totalFiles: stagedList.length,
+        processedFiles: completedCount,
+        currentFileName: batch.last.cleanName,
+        status: 'Enriched $completedCount of ${stagedList.length} documents...',
+      );
+    }
+
+    yield SyncProgress(
+      totalFiles: stagedList.length,
+      processedFiles: stagedList.length,
+      status: 'Indexed & secured ${stagedList.length} document(s) in offline vault!',
       isCompleted: true,
     );
+  }
+
+  static String _guessDocTypeFromFilename(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('aadhaar') || lower.contains('aadhar') || lower.contains('uidai')) return 'AADHAAR';
+    if (lower.contains('pan') || lower.contains('nsdl') || lower.contains('uti')) return 'PAN';
+    if (lower.contains('dl') || lower.contains('driving') || lower.contains('license')) return 'DRIVING_LICENSE';
+    if (lower.contains('passport')) return 'PASSPORT';
+    if (lower.contains('rc') || lower.contains('registration') || lower.contains('vahan')) return 'VEHICLE_RC';
+    if (lower.contains('insurance') || lower.contains('policy')) return 'VEHICLE_INSURANCE';
+    if (lower.contains('voter') || lower.contains('epic') || lower.contains('election')) return 'VOTER_ID';
+    if (lower.contains('marksheet') || lower.contains('degree') || lower.contains('certificate')) return 'MARKSHEET';
+    return 'OTHER';
+  }
+
+  static String _categoryForDocType(String docType) {
+    switch (docType.toUpperCase()) {
+      case 'AADHAAR':
+      case 'PAN':
+      case 'PASSPORT':
+      case 'VOTER_ID':
+        return 'Identity';
+      case 'DRIVING_LICENSE':
+      case 'VEHICLE_RC':
+      case 'VEHICLE_INSURANCE':
+        return 'Vehicle';
+      case 'HEALTH_INSURANCE':
+        return 'Health';
+      case 'MARKSHEET':
+        return 'Education';
+      default:
+        return 'Other';
+    }
   }
 
   static String _formatDocType(String type) {
