@@ -271,7 +271,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
           TextField(
             controller: _nameController,
             textCapitalization: TextCapitalization.words,
-            style: const TextStyle(fontSize: 15, color: Colors.white, fontWeight: FontWeight.w500),
+            style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
             decoration: const InputDecoration(
               hintText: 'e.g. Muneer Shaik or Rahul Sharma',
               prefixIcon: Icon(Icons.person_outline, color: AppTheme.primaryColor, size: 20),
@@ -318,7 +318,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                   TextField(
                     controller: _apiKeyController,
                     obscureText: true,
-                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: Colors.white),
+                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: AppTheme.textPrimary),
                     decoration: const InputDecoration(
                       hintText: 'Enter API Key (AIzaSy...)',
                       contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),

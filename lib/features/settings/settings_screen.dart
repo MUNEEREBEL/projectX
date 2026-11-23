@@ -246,7 +246,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   TextField(
                     controller: _apiKeyController,
                     obscureText: _obscureKey,
-                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: Colors.white),
+                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: AppTheme.textPrimary),
                     decoration: InputDecoration(
                       hintText: 'Enter API Key (AIzaSy...)',
                       suffixIcon: IconButton(
@@ -315,9 +315,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
-                      backgroundColor: AppTheme.darkCard,
-                      title: const Text('Clear Vault Data?'),
-                      content: const Text('This will delete all indexed document records from your local database.'),
+                      backgroundColor: Theme.of(context).cardColor,
+                      title: const Text('Clear Vault Data?', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700)),
+                      content: const Text('This will delete all indexed document records from your local database.', style: TextStyle(color: AppTheme.textSecondary)),
                       actions: [
                         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
                         ElevatedButton(
@@ -378,10 +378,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.darkCard,
-        title: const Text('Edit Cardholder Name'),
+        backgroundColor: Theme.of(context).cardColor,
+        title: const Text('Edit Cardholder Name', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700)),
         content: TextField(
           controller: _ownerNameController,
+          style: const TextStyle(color: AppTheme.textPrimary),
           decoration: const InputDecoration(hintText: 'Enter full name (e.g. Muneer Shaik)'),
         ),
         actions: [

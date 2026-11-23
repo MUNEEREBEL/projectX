@@ -195,9 +195,9 @@ class _AssistantScreenState extends State<AssistantScreen> {
                                             child: Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                               decoration: BoxDecoration(
-                                                color: Colors.white.withValues(alpha: 0.08),
+                                                color: AppTheme.primaryColor.withValues(alpha: 0.08),
                                                 borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(color: AppTheme.glassBorderHighlight),
+                                                border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.25)),
                                               ),
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
@@ -321,13 +321,20 @@ class _AssistantScreenState extends State<AssistantScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
+                        color: Colors.white.withValues(alpha: 0.90),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: AppTheme.glassBorder),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Text(
                         suggestion,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                        style: const TextStyle(fontSize: 11, color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
                       ),
                     ),
                   ),
@@ -350,7 +357,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                     child: TextField(
                       controller: _controller,
                       onSubmitted: (_) => _sendMessage(),
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
                       decoration: const InputDecoration(
                         hintText: 'Ask about any document or field...',
                         hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12),

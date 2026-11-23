@@ -48,7 +48,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
               child: TextField(
                 controller: _searchController,
                 onChanged: (_) => setState(() {}),
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+                style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
                 decoration: InputDecoration(
                   hintText: 'Search vault by title, type, or number...',
                   hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
@@ -239,8 +239,10 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
                                   ),
                                   child: Text(
                                     doc.expiryDate != null
-                                        ? (doc.isExpired ? 'Expired' : 'Expires in ${doc.daysUntilExpiry} days')
+                                        ? (doc.isExpired ? 'Expired (${doc.daysUntilExpiry!.abs()}d ago)' : 'Expires in ${doc.daysUntilExpiry} days')
                                         : 'Lifetime Validity (No Expiry)',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontSize: 9,
                                       fontWeight: FontWeight.w600,

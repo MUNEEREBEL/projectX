@@ -41,17 +41,17 @@ class GlassCard extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Colors.white.withValues(alpha: 0.08),
-                    Colors.white.withValues(alpha: 0.03),
+                    Colors.white.withValues(alpha: 0.95),
+                    Colors.white.withValues(alpha: 0.85),
                   ],
                 ),
             border: Border.all(
-              color: borderColor ?? Colors.white.withValues(alpha: 0.12),
+              color: borderColor ?? const Color(0xFFE2E8F0),
               width: borderWidth,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
+                color: const Color(0xFF0F172A).withValues(alpha: 0.05),
                 blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
@@ -88,23 +88,23 @@ class GlassBackgroundWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Base dark cosmic gradient
+        // Base light executive gradient
         Container(
           decoration: const BoxDecoration(
             gradient: AppTheme.bgGradient,
           ),
         ),
 
-        // Ambient sapphire glow orb (top right)
+        // Ambient sky blue glow orb (top right)
         Positioned(
-          top: -80,
-          right: -80,
+          top: -60,
+          right: -60,
           child: Container(
             width: 260,
             height: 260,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppTheme.primaryColor.withValues(alpha: 0.18),
+              color: AppTheme.primaryColor.withValues(alpha: 0.08),
             ),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
@@ -113,7 +113,7 @@ class GlassBackgroundWrapper extends StatelessWidget {
           ),
         ),
 
-        // Ambient indigo/cyan glow orb (bottom left)
+        // Ambient cyan glow orb (bottom left)
         Positioned(
           bottom: 120,
           left: -60,
@@ -122,7 +122,7 @@ class GlassBackgroundWrapper extends StatelessWidget {
             height: 220,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppTheme.accentColor.withValues(alpha: 0.12),
+              color: AppTheme.accentColor.withValues(alpha: 0.07),
             ),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),

@@ -1,27 +1,33 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Deep obsidian & titanium glass palette
-  static const Color darkBg = Color(0xFF070B14);
-  static const Color darkCard = Color(0xFF0F172A);
-  static const Color darkCardTranslucent = Color(0xB30F172A);
-  static const Color darkBorder = Color(0xFF1E293B);
-  static const Color darkBorderFocus = Color(0xFF38BDF8);
+  // Luminous white & executive glass palette
+  static const Color lightBg = Color(0xFFF8FAFC);
+  static const Color lightCard = Color(0xFFFFFFFF);
+  static const Color lightCardTranslucent = Color(0xF2FFFFFF);
+  static const Color lightBorder = Color(0xFFE2E8F0);
+  static const Color lightBorderFocus = Color(0xFF2563EB);
+
+  // Backwards compatibility aliases for dark theme callers
+  static const Color darkCard = Color(0xFFFFFFFF);
+  static const Color darkBorder = Color(0xFFE2E8F0);
+  static const Color darkBackground = Color(0xFFF8FAFC);
+  static const Color darkCardTranslucent = Color(0xF2FFFFFF);
 
   // Glass highlights & borders
-  static final Color glassFill = Colors.white.withValues(alpha: 0.05);
-  static final Color glassBorder = Colors.white.withValues(alpha: 0.12);
-  static final Color glassBorderHighlight = Colors.white.withValues(alpha: 0.25);
+  static final Color glassFill = Colors.white.withValues(alpha: 0.85);
+  static const Color glassBorder = Color(0xFFE2E8F0);
+  static const Color glassBorderHighlight = Color(0xFFCBD5E1);
 
-  // Cosmic Background Gradient
+  // Executive Light Background Gradient
   static const LinearGradient bgGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFF060911),
-      Color(0xFF0A0F1D),
-      Color(0xFF0D1527),
-      Color(0xFF060911),
+      Color(0xFFF8FAFC),
+      Color(0xFFF1F5F9),
+      Color(0xFFE2E8F0),
+      Color(0xFFF8FAFC),
     ],
     stops: [0.0, 0.35, 0.75, 1.0],
   );
@@ -29,47 +35,47 @@ class AppTheme {
   // Executive Vibrant Accents
   static const Color primaryColor = Color(0xFF2563EB); // Electric Royal Blue
   static const Color primaryGlow = Color(0xFF3B82F6);
-  static const Color accentColor = Color(0xFF38BDF8); // Cyan Glow
-  static const Color successColor = Color(0xFF10B981); // Emerald Glow
-  static const Color warningColor = Color(0xFFF59E0B); // Amber Glow
-  static const Color dangerColor = Color(0xFFEF4444); // Crimson Glow
-  static const Color violetColor = Color(0xFF8B5CF6);
+  static const Color accentColor = Color(0xFF0284C7); // Sky Cyan
+  static const Color successColor = Color(0xFF059669); // Emerald
+  static const Color warningColor = Color(0xFFD97706); // Amber
+  static const Color dangerColor = Color(0xFFDC2626); // Crimson
+  static const Color violetColor = Color(0xFF7C3AED);
 
-  // Typography
-  static const Color textPrimary = Color(0xFFF8FAFC);
-  static const Color textSecondary = Color(0xFF94A3B8);
-  static const Color textMuted = Color(0xFF64748B);
+  // High-contrast Typography for crisp white canvas
+  static const Color textPrimary = Color(0xFF0F172A); // Rich dark slate
+  static const Color textSecondary = Color(0xFF475569); // Medium slate
+  static const Color textMuted = Color(0xFF64748B); // Muted slate
 
   static final List<Color> avatarColors = [
-    const Color(0xFF3B82F6), // Sapphire
-    const Color(0xFF10B981), // Emerald
-    const Color(0xFF8B5CF6), // Violet
-    const Color(0xFFF59E0B), // Amber
-    const Color(0xFFEC4899), // Rose
-    const Color(0xFF06B6D4), // Cyan
+    const Color(0xFF2563EB), // Sapphire
+    const Color(0xFF059669), // Emerald
+    const Color(0xFF7C3AED), // Violet
+    const Color(0xFFD97706), // Amber
+    const Color(0xFFDB2777), // Rose
+    const Color(0xFF0891B2), // Cyan
   ];
 
-  static ThemeData get darkTheme {
+  static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: darkBg,
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: lightBg,
       primaryColor: primaryColor,
-      colorScheme: const ColorScheme.dark(
+      colorScheme: const ColorScheme.light(
         primary: primaryColor,
         secondary: accentColor,
-        surface: darkCard,
+        surface: lightCard,
         error: dangerColor,
         onSurface: textPrimary,
       ),
       fontFamily: 'Roboto',
       cardTheme: CardThemeData(
-        color: darkCardTranslucent,
+        color: lightCard,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: glassBorder, width: 1),
+          side: const BorderSide(color: lightBorder, width: 1),
         ),
       ),
       appBarTheme: const AppBarTheme(
@@ -87,14 +93,14 @@ class AppTheme {
         iconTheme: IconThemeData(color: textPrimary, size: 20),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        indicatorColor: primaryColor.withValues(alpha: 0.22),
+        elevation: 4,
+        indicatorColor: primaryColor.withValues(alpha: 0.12),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return const TextStyle(
-              color: textPrimary,
+              color: primaryColor,
               fontWeight: FontWeight.w600,
               fontSize: 12,
               letterSpacing: -0.2,
@@ -105,19 +111,19 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.05),
+        fillColor: Colors.white,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: glassBorder),
+          borderSide: const BorderSide(color: lightBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: glassBorder),
+          borderSide: const BorderSide(color: lightBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: darkBorderFocus, width: 1.5),
+          borderSide: const BorderSide(color: primaryColor, width: 1.5),
         ),
         hintStyle: const TextStyle(color: textMuted, fontSize: 13),
       ),
@@ -126,7 +132,7 @@ class AppTheme {
           backgroundColor: primaryColor,
           foregroundColor: Colors.white,
           elevation: 2,
-          shadowColor: primaryColor.withValues(alpha: 0.4),
+          shadowColor: primaryColor.withValues(alpha: 0.25),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, letterSpacing: -0.2),
@@ -134,8 +140,8 @@ class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          side: BorderSide(color: glassBorder),
-          backgroundColor: Colors.white.withValues(alpha: 0.04),
+          side: const BorderSide(color: lightBorder),
+          backgroundColor: Colors.white,
           foregroundColor: textPrimary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -143,12 +149,15 @@ class AppTheme {
         ),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: Colors.white.withValues(alpha: 0.05),
-        selectedColor: primaryColor.withValues(alpha: 0.25),
-        side: BorderSide(color: glassBorder, width: 1),
+        backgroundColor: Colors.white,
+        selectedColor: primaryColor.withValues(alpha: 0.12),
+        side: const BorderSide(color: lightBorder, width: 1),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         labelStyle: const TextStyle(color: textSecondary, fontSize: 12, fontWeight: FontWeight.w500),
       ),
     );
   }
+
+  // Backwards compatibility getter
+  static ThemeData get darkTheme => lightTheme;
 }

@@ -255,10 +255,22 @@ class FolderSyncService {
     final existingDocs = await db.getAllDocuments();
     final existingFileNames = existingDocs.map((d) => d.fileName.toLowerCase()).toSet();
 
-    // Filter files that are not already indexed
+    // Helper to strip staging timestamps and get clean original filename
+    String getCleanName(String filePath) {
+      String clean = p.basename(filePath);
+      if (clean.startsWith('vault_staging_') || clean.startsWith('vault_import_')) {
+        final parts = clean.split('_');
+        if (parts.length >= 3) {
+          clean = parts.sublist(2).join('_');
+        }
+      }
+      return clean.toLowerCase();
+    }
+
+    // Filter files that are not already indexed - only scan genuinely new files!
     final newFiles = files.where((f) {
-      final name = p.basename(f.path).toLowerCase();
-      return !existingFileNames.contains(name);
+      final clean = getCleanName(f.path);
+      return !existingFileNames.contains(clean);
     }).toList();
 
     if (newFiles.isEmpty) {
@@ -464,6 +476,13 @@ class FolderSyncService {
           extractResult.extraFields.forEach((k, v) {
             if (v.trim().isNotEmpty && v.trim().toLowerCase() != 'null') {
               addField(_formatFieldName(k), v, 'details');
+            }
+          });
+
+          // Extract all individual subject marks into distinct, queryable fields
+          extractResult.subjectMarks.forEach((subject, marks) {
+            if (marks.trim().isNotEmpty && marks.trim().toLowerCase() != 'null') {
+              addField('Subject: $subject', marks.trim(), 'academic');
             }
           });
 

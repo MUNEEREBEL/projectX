@@ -61,9 +61,9 @@ class PrivDocApp extends StatelessWidget {
     return MaterialApp(
       title: 'PrivDoc AI',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.dark,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.lightTheme,
+      themeMode: ThemeMode.light,
       navigatorObservers: [RouteKeyboardDismissObserver()],
       builder: (context, child) {
         return GestureDetector(

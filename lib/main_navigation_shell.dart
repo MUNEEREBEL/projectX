@@ -57,17 +57,17 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
               height: 64,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF131826).withValues(alpha: 0.75),
+                color: Colors.white.withValues(alpha: 0.92),
                 borderRadius: BorderRadius.circular(22),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.12),
+                  color: const Color(0xFFE2E8F0),
                   width: 1.0,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 20,
-                    offset: const Offset(0, 6),
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+                    blurRadius: 18,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
@@ -85,12 +85,12 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? AppTheme.primaryColor.withValues(alpha: 0.2)
+                            ? AppTheme.primaryColor.withValues(alpha: 0.12)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: isSelected
-                              ? AppTheme.primaryColor.withValues(alpha: 0.4)
+                              ? AppTheme.primaryColor.withValues(alpha: 0.25)
                               : Colors.transparent,
                           width: 1,
                         ),
@@ -103,7 +103,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                                 ? item['activeIcon'] as IconData
                                 : item['icon'] as IconData,
                             color: isSelected
-                                ? AppTheme.accentColor
+                                ? AppTheme.primaryColor
                                 : AppTheme.textMuted,
                             size: 20,
                           ),
@@ -113,7 +113,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                              color: isSelected ? AppTheme.textPrimary : AppTheme.textMuted,
+                              color: isSelected ? AppTheme.primaryColor : AppTheme.textMuted,
                             ),
                           ),
                         ],

@@ -19,9 +19,9 @@ class ExpiryRadarWidget extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: AppTheme.darkCard,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppTheme.darkBorder),
+          color: Colors.white.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.glassBorder),
         ),
         child: const Row(
           children: [
@@ -93,9 +93,16 @@ class ExpiryRadarWidget extends StatelessWidget {
                   margin: const EdgeInsets.only(right: 10),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppTheme.darkCard,
-                    borderRadius: BorderRadius.circular(10),
+                    color: Colors.white.withValues(alpha: 0.90),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: accent.withValues(alpha: 0.4), width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -110,7 +117,7 @@ class ExpiryRadarWidget extends StatelessWidget {
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              isExpired ? 'EXPIRED' : '$days DAYS LEFT',
+                              isExpired ? 'EXPIRED (${days.abs()}d AGO)' : '$days DAYS LEFT',
                               style: TextStyle(
                                 color: accent,
                                 fontSize: 10,

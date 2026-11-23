@@ -471,7 +471,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                   ),
                                   child: Text(
                                     doc.expiryDate != null
-                                        ? (doc.isExpired ? 'Expired' : 'Expires in ${doc.daysUntilExpiry} days')
+                                        ? (doc.isExpired ? 'Expired (${doc.daysUntilExpiry!.abs()}d ago)' : 'Expires in ${doc.daysUntilExpiry} days')
                                         : 'Lifetime Validity (No Expiry)',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,

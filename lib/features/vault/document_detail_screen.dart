@@ -72,6 +72,204 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     return DateFormat('dd MMM yyyy').format(date);
   }
 
+  void _openFullScreenImage(BuildContext context, File file, String title) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black.withValues(alpha: 0.95),
+        insetPadding: const EdgeInsets.all(10),
+        child: Stack(
+          children: [
+            Center(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 6.0,
+                child: Image.file(file),
+              ),
+            ),
+            Positioned(
+              top: 10,
+              left: 14,
+              right: 50,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+            Positioned(
+              top: 6,
+              right: 6,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 24),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentPreview(DocumentModel doc) {
+    final ext = doc.fileType.toLowerCase();
+    final isImage = ['jpg', 'jpeg', 'png', 'webp', 'bmp'].contains(ext) ||
+        doc.filePath.toLowerCase().endsWith('.jpg') ||
+        doc.filePath.toLowerCase().endsWith('.jpeg') ||
+        doc.filePath.toLowerCase().endsWith('.png') ||
+        doc.filePath.toLowerCase().endsWith('.webp');
+    final file = File(doc.filePath);
+    final fileExists = file.existsSync();
+
+    return GlassCard(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 16,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.preview_outlined, size: 16, color: AppTheme.accentColor),
+              const SizedBox(width: 8),
+              const Text(
+                'DOCUMENT VIEWER',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 0.8),
+              ),
+              const Spacer(),
+              if (fileExists)
+                Text(
+                  '${(file.lengthSync() / 1024).toStringAsFixed(1)} KB',
+                  style: const TextStyle(fontSize: 10, color: AppTheme.textMuted, fontFamily: 'monospace'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (!fileExists)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppTheme.dangerColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.dangerColor.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.broken_image_outlined, color: AppTheme.dangerColor, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Original file not found at path.\n${doc.filePath}',
+                      style: const TextStyle(fontSize: 11, color: AppTheme.dangerColor),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (isImage) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                height: 240,
+                width: double.infinity,
+                color: Colors.black.withValues(alpha: 0.03),
+                child: Stack(
+                  children: [
+                    Center(
+                      child: InteractiveViewer(
+                        minScale: 0.8,
+                        maxScale: 4.0,
+                        child: Image.file(
+                          file,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(Icons.broken_image, color: AppTheme.textMuted, size: 40),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Material(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(8),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => _openFullScreenImage(context, file, doc.title),
+                          child: const Padding(
+                            padding: EdgeInsets.all(6.0),
+                            child: Icon(Icons.fullscreen, size: 20, color: AppTheme.primaryColor),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Center(
+              child: Text(
+                'Pinch to zoom preview • Tap full screen for high-res view',
+                style: TextStyle(fontSize: 10, color: AppTheme.textMuted),
+              ),
+            ),
+          ] else ...[
+            // PDF or other document
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.picture_as_pdf, color: AppTheme.accentColor, size: 28),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          doc.fileName,
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textPrimary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'PDF Document (${doc.fileType.toUpperCase()})',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _shareDocumentFile,
+                    icon: const Icon(Icons.open_in_new, size: 14),
+                    label: const Text('Open / Share', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final doc = widget.document;
@@ -95,9 +293,12 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
-                    backgroundColor: AppTheme.darkCard,
-                    title: const Text('Delete Document?'),
-                    content: Text('Remove "${doc.title}" from your vault? The local original file will not be deleted.'),
+                    backgroundColor: Theme.of(context).cardColor,
+                    title: const Text('Delete Document?', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700)),
+                    content: Text(
+                      'Remove "${doc.title}" from your vault? The local original file will not be deleted.',
+                      style: const TextStyle(color: AppTheme.textSecondary),
+                    ),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
                       ElevatedButton(
@@ -246,6 +447,11 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
 
                   const SizedBox(height: 12),
 
+                  // In-App Document Preview (Image viewer with pinch-to-zoom or PDF card)
+                  _buildDocumentPreview(doc),
+
+                  const SizedBox(height: 12),
+
                   // 2. Frosted Expiry & Lifetime Validity Banner
                   GlassCard(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -294,7 +500,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                               const SizedBox(height: 2),
                               Text(
                                 doc.expiryDate != null
-                                    ? '${_formatDate(doc.expiryDate!)} (${doc.daysUntilExpiry} days remaining)'
+                                    ? (doc.isExpired
+                                        ? '${_formatDate(doc.expiryDate!)} (Expired ${doc.daysUntilExpiry!.abs()} days ago)'
+                                        : '${_formatDate(doc.expiryDate!)} (${doc.daysUntilExpiry} days remaining)')
                                     : 'Lifetime Validity (No Expiry)',
                                 style: TextStyle(
                                   color: doc.expiryDate != null
@@ -397,7 +605,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                         onPressed: () {
                           showModalBottomSheet(
                             context: context,
-                            backgroundColor: const Color(0xFF0F172A),
+                            backgroundColor: Theme.of(context).cardColor,
                             isScrollControlled: true,
                             shape: const RoundedRectangleBorder(
                               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -418,7 +626,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                                           children: [
                                             const Icon(Icons.data_object, color: AppTheme.accentColor, size: 18),
                                             const SizedBox(width: 8),
-                                            const Text('Raw Stored AI Response (SQLite)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                            const Text('Raw Stored AI Response (SQLite)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppTheme.textPrimary)),
                                             const Spacer(),
                                             IconButton(
                                               icon: const Icon(Icons.copy, size: 18, color: AppTheme.accentColor),

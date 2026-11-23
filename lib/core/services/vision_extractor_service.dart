@@ -24,6 +24,7 @@ class ExtractionResult {
   final String? address;
   final String? pinCode;
   final Map<String, String> extraFields;
+  final Map<String, String> subjectMarks;
   final bool isChecksumValid;
   final String rawResponse;
 
@@ -42,6 +43,7 @@ class ExtractionResult {
     this.address,
     this.pinCode,
     this.extraFields = const {},
+    this.subjectMarks = const {},
     this.isChecksumValid = true,
     this.rawResponse = '',
   });
@@ -62,6 +64,7 @@ class ExtractionResult {
       'address': address,
       'pin_code': pinCode,
       'extra_fields': extraFields,
+      'subject_marks': subjectMarks,
       'is_checksum_valid': isChecksumValid,
     };
   }
@@ -151,7 +154,15 @@ CRITICAL EXTRACTION & ACCURACY RULES:
    - NON-EXPIRING: Aadhaar, PAN, Caste Certificate, Marksheets, Degree Certificates, and Birth Certificates do NOT expire. Set "expiry_date": null.
 
 4. ACADEMIC MARKSHEETS & CERTIFICATES:
-   - Extract "document_title" properly (e.g. "Class 10th Marksheet", "Class 12th Marksheet", "B.Tech Grade Sheet", "Degree Certificate").
+   - PRECISE DOCUMENT TITLE WITH SEMESTER OR CLASS:
+     If the document is a marksheet or grade sheet, check for semester or academic class:
+     - If it is for Class 10 / SSC: "Class 10th Marksheet (SSC)"
+     - If it is for Class 12 / HSC / Intermediate: "Class 12th Marksheet (HSC)"
+     - If it mentions a semester (e.g. "III Semester", "Semester 4", "6th Sem"): "B.Tech Semester 4 Grade Sheet" or "[Degree] [Semester] Marksheet"
+     Set "document_title" to this exact, descriptive title!
+   - ALL INDIVIDUAL SUBJECTS AND MARKS:
+     In "subject_marks", you MUST extract EVERY SINGLE SUBJECT listed in the table along with its marks, points, or grade obtained (e.g. {"Mathematics": "96", "Science": "92", "English": "88", "Social Science": "90"}). DO NOT omit any subjects!
+   - Extract "semester" into extra_fields (e.g. "4th Semester", "Semester 3").
    - Extract "sgpa" (Semester Grade Point Average, e.g. "8.45").
    - Extract "cgpa" (Cumulative Grade Point Average, e.g. "8.12").
    - Extract "percentage" (e.g. "85.6%").
@@ -191,7 +202,7 @@ Output MUST strictly follow this JSON schema:
 {
   "doc_type": "string",
   "category": "string",
-  "document_title": "string (Clean, proper title: e.g. 'PAN Card', 'Class 10th Marksheet', 'Class 12th Marksheet', 'B.Tech Grade Sheet', 'Income Certificate', 'EWS Certificate', 'Driving License', 'Vehicle RC')",
+  "document_title": "string (Clean, proper title: e.g. 'Class 10th Marksheet (SSC)', 'B.Tech Semester 4 Grade Sheet', 'PAN Card', 'Income Certificate', 'EWS Certificate', 'Driving License', 'Vehicle RC')",
   "holder_name": "string (Full Name of the cardholder/applicant/student)",
   "relation_name": "string or null (ONLY actual Father/Husband/Spouse name. NEVER the Tahsildar or officer)",
   "relation_type": "string or null ('Father', 'Husband', 'Spouse', 'Mother')",
@@ -202,7 +213,11 @@ Output MUST strictly follow this JSON schema:
   "expiry_date": "string or null (YYYY-MM-DD, e.g. valid financial year end 2024-03-31 for EWS 2023-2024, license validity, insurance expiry)",
   "address": "string or null (complete address)",
   "pin_code": "string or null (6-digit PIN code)",
+  "subject_marks": {
+    "Subject Name": "Marks or Grade (e.g. 95 or A+)"
+  },
   "extra_fields": {
+    "semester": "string or null (e.g. 4th Semester, Semester 3)",
     "sgpa": "string or null (Semester Grade Point Average)",
     "cgpa": "string or null (Cumulative Grade Point Average)",
     "percentage": "string or null",
@@ -371,6 +386,15 @@ Output MUST strictly follow this JSON schema:
         });
       }
 
+      Map<String, String> subjectMarks = {};
+      if (data['subject_marks'] is Map) {
+        (data['subject_marks'] as Map).forEach((k, v) {
+          if (v != null && v.toString().trim().isNotEmpty && v.toString().toLowerCase() != 'null') {
+            subjectMarks[k.toString().trim()] = v.toString().trim();
+          }
+        });
+      }
+
       // Discard "lifetime" text for expiry
       if (expiryDate != null && (expiryDate.toLowerCase().contains('lifetime') || expiryDate.trim().isEmpty || expiryDate.toLowerCase() == 'null')) {
         expiryDate = null;
@@ -424,6 +448,7 @@ Output MUST strictly follow this JSON schema:
         address: address,
         pinCode: pinCode,
         extraFields: extraFields,
+        subjectMarks: subjectMarks,
         isChecksumValid: isChecksumValid,
         rawResponse: rawJson,
       );
