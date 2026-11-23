@@ -119,10 +119,15 @@ class ExpiryRadarWidget extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const Spacer(),
-                          Text(
-                            doc.docType.replaceAll('_', ' '),
-                            style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w500),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              doc.docType.replaceAll('_', ' '),
+                              textAlign: TextAlign.end,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w500),
+                            ),
                           ),
                         ],
                       ),

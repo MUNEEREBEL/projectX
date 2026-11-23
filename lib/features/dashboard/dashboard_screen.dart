@@ -159,11 +159,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         child: const Icon(Icons.folder_outlined, color: AppTheme.accentColor, size: 16),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
-                        'MONITORED VAULT DIRECTORY',
-                        style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textMuted, fontSize: 10, letterSpacing: 0.8),
+                      const Expanded(
+                        child: Text(
+                          'MONITORED VAULT DIRECTORY',
+                          style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textMuted, fontSize: 10, letterSpacing: 0.8),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      const Spacer(),
                       InkWell(
                         onTap: () async {
                           final picked = await FolderSyncService.pickFolder();
@@ -209,10 +212,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                 )
                               : const Icon(Icons.sync, size: 14, color: AppTheme.accentColor),
                           label: Text(
-                            _isSyncing
-                                ? (syncProgress?.status ?? 'Syncing...')
-                                : 'Sync Folder',
+                            _isSyncing ? 'Syncing...' : 'Sync Folder',
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
@@ -248,6 +251,36 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       ),
                     ],
                   ),
+                  if (_isSyncing && syncProgress != null) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: syncProgress.percentage > 0 ? syncProgress.percentage : null,
+                        backgroundColor: AppTheme.glassBorder,
+                        color: AppTheme.accentColor,
+                        minHeight: 5,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            syncProgress.status,
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${(syncProgress.percentage * 100).toInt()}%',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.accentColor, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -418,6 +451,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                 Text(
                                   doc.idNumber ?? doc.category,
                                   style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontFamily: 'monospace'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 3),
                                 Container(
@@ -438,6 +473,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                     doc.expiryDate != null
                                         ? (doc.isExpired ? 'Expired' : 'Expires in ${doc.daysUntilExpiry} days')
                                         : 'Lifetime Validity (No Expiry)',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontSize: 9,
                                       fontWeight: FontWeight.w600,

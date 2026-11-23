@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
@@ -32,6 +33,8 @@ class SyncProgress {
     this.isCompleted = false,
     this.error,
   });
+
+  double get percentage => totalFiles > 0 ? (processedFiles / totalFiles).clamp(0.0, 1.0) : 0.0;
 }
 
 class PickFolderResult {
@@ -234,9 +237,16 @@ class FolderSyncService {
   }
 
   /// Imports and indexes a list of files into permanent vault storage
-  static Stream<SyncProgress> syncFiles(List<File> files) async* {
+  static Stream<SyncProgress> syncFiles(List<File> files) {
+    final controller = StreamController<SyncProgress>();
+    _runSyncJob(files, controller);
+    return controller.stream;
+  }
+
+  static Future<void> _runSyncJob(List<File> files, StreamController<SyncProgress> controller) async {
     if (files.isEmpty) {
-      yield SyncProgress(status: 'No files to index', isCompleted: true);
+      controller.add(SyncProgress(status: 'No files to index', isCompleted: true));
+      await controller.close();
       return;
     }
 
@@ -252,12 +262,13 @@ class FolderSyncService {
     }).toList();
 
     if (newFiles.isEmpty) {
-      yield SyncProgress(
+      controller.add(SyncProgress(
         status: 'All ${files.length} documents are already indexed and stored in vault!',
         totalFiles: files.length,
         processedFiles: files.length,
         isCompleted: true,
-      );
+      ));
+      await controller.close();
       return;
     }
 
@@ -350,16 +361,16 @@ class FolderSyncService {
       ));
     }
 
-    yield SyncProgress(
+    controller.add(SyncProgress(
       totalFiles: stagedList.length,
       processedFiles: 0,
       status: 'Secured ${stagedList.length} document(s) in vault. Enriching with Vision AI...',
       logMessage: '[${DateFormat('HH:mm:ss').format(DateTime.now())}] 💾 All ${stagedList.length} file(s) saved to local SQLite vault.',
-    );
+    ));
 
-    // 2. HIGH-SPEED AI EXTRACTION (Concurrency: 2 - smooth, no rate limits, no gralloc errors)
+    // 2. TRUE PARALLEL BATCH EXTRACTION (Batch: 3 parallel AI requests - ultra-fast & low network)
     int completedCount = 0;
-    const int concurrency = 2;
+    const int concurrency = 3;
 
     for (int i = 0; i < stagedList.length; i += concurrency) {
       final end = (i + concurrency < stagedList.length) ? i + concurrency : stagedList.length;
@@ -367,14 +378,16 @@ class FolderSyncService {
 
       for (final item in batch) {
         final timeStart = DateFormat('HH:mm:ss').format(DateTime.now());
-        yield SyncProgress(
+        controller.add(SyncProgress(
           totalFiles: stagedList.length,
           processedFiles: completedCount,
           currentFileName: item.cleanName,
           status: 'Analyzing ${item.cleanName} (${completedCount + 1} of ${stagedList.length})...',
           logMessage: '[$timeStart] ⚡ Querying Gemini AI for ${item.cleanName}...',
-        );
+        ));
+      }
 
+      await Future.wait(batch.map((item) async {
         try {
           final extractResult = await VisionExtractorService.extractDocument(
             filePath: item.permanentFile.path,
@@ -463,36 +476,37 @@ class FolderSyncService {
           completedCount++;
           final timeDone = DateFormat('HH:mm:ss').format(DateTime.now());
           final idStr = extractResult.idNumber != null ? ' (${extractResult.idNumber})' : '';
-          yield SyncProgress(
+          controller.add(SyncProgress(
             totalFiles: stagedList.length,
             processedFiles: completedCount,
             currentFileName: item.cleanName,
             status: 'Verified ${item.cleanName} ($completedCount of ${stagedList.length})',
             logMessage: '[$timeDone] ✓ Verified: ${_formatDocType(extractResult.docType)}$idStr for ${person.name}',
-          );
+          ));
         } catch (e) {
           completedCount++;
           final timeErr = DateFormat('HH:mm:ss').format(DateTime.now());
           final errShort = e.toString().split('\n').first.replaceAll('Exception:', '').trim();
-          yield SyncProgress(
+          controller.add(SyncProgress(
             totalFiles: stagedList.length,
             processedFiles: completedCount,
             currentFileName: item.cleanName,
             status: 'Saved ${item.cleanName} (offline metadata)',
             logMessage: '[$timeErr] ⚠️ ${item.cleanName}: Stored with offline filename metadata ($errShort)',
-          );
+          ));
         }
-      }
+      }));
     }
 
     final allDoneTime = DateFormat('HH:mm:ss').format(DateTime.now());
-    yield SyncProgress(
+    controller.add(SyncProgress(
       totalFiles: stagedList.length,
       processedFiles: stagedList.length,
       status: 'Indexed & secured ${stagedList.length} document(s) in offline vault!',
       logMessage: '[$allDoneTime] 🎉 All ${stagedList.length} document(s) successfully indexed into offline vault!',
       isCompleted: true,
-    );
+    ));
+    await controller.close();
   }
 
   static String _guessDocTypeFromFilename(String name) {

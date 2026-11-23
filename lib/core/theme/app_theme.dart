@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Deep space obsidian glass palette
-  static const Color darkBg = Color(0xFF090D16);
-  static const Color darkCard = Color(0xFF131824);
-  static const Color darkCardTranslucent = Color(0x99131824);
-  static const Color darkBorder = Color(0xFF222938);
+  // Deep obsidian & titanium glass palette
+  static const Color darkBg = Color(0xFF070B14);
+  static const Color darkCard = Color(0xFF0F172A);
+  static const Color darkCardTranslucent = Color(0xB30F172A);
+  static const Color darkBorder = Color(0xFF1E293B);
   static const Color darkBorderFocus = Color(0xFF38BDF8);
 
   // Glass highlights & borders
-  static final Color glassFill = Colors.white.withValues(alpha: 0.06);
+  static final Color glassFill = Colors.white.withValues(alpha: 0.05);
   static final Color glassBorder = Colors.white.withValues(alpha: 0.12);
-  static final Color glassBorderHighlight = Colors.white.withValues(alpha: 0.22);
+  static final Color glassBorderHighlight = Colors.white.withValues(alpha: 0.25);
 
   // Cosmic Background Gradient
   static const LinearGradient bgGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFF070A10),
-      Color(0xFF0B101B),
-      Color(0xFF0F172A),
-      Color(0xFF070A10),
+      Color(0xFF060911),
+      Color(0xFF0A0F1D),
+      Color(0xFF0D1527),
+      Color(0xFF060911),
     ],
     stops: [0.0, 0.35, 0.75, 1.0],
   );

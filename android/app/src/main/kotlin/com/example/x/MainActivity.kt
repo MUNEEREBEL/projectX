@@ -183,11 +183,7 @@ class MainActivity : FlutterActivity() {
                                 val ext = name.substringAfterLast('.', "").lowercase()
                                 if (ext in supportedExts) {
                                     val cachedFile = File(applicationContext.cacheDir, "vault_staging_${System.currentTimeMillis()}_$name")
-                                    applicationContext.contentResolver.openInputStream(child.uri)?.use { input ->
-                                        cachedFile.outputStream().use { output ->
-                                            input.copyTo(output)
-                                        }
-                                    }
+                                    copyOrDownsample(child.uri, cachedFile, ext)
                                     matchingPaths.add(cachedFile.absolutePath)
                                 }
                             }
