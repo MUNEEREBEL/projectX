@@ -39,10 +39,10 @@ class AssistiveBallService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Project X Assistive Copilot",
+                "Project X Assistive Ball",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Shows active status of the floating form assistive ball."
+                description = "Shows active status of the floating assistive ball."
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
@@ -52,7 +52,7 @@ class AssistiveBallService : Service() {
     private fun buildNotification(): Notification {
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("OPEN_COPILOT", true)
+            putExtra("OPEN_X", true)
         }
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -62,7 +62,7 @@ class AssistiveBallService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Project X Copilot Active")
+            .setContentTitle("Project X Active")
             .setContentText("Tap to open 1-tap cardholder details & file upload")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)

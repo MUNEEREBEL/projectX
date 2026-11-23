@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/services/alert_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/onboarding/onboarding_setup_screen.dart';
+import 'features/overlay/assistive_ball_widget.dart';
 import 'main_navigation_shell.dart';
 
 /// Observer that automatically dismisses the software keyboard on any route navigation
@@ -71,7 +72,9 @@ class ProjectXApp extends StatelessWidget {
           onTap: () {
             FocusManager.instance.primaryFocus?.unfocus();
           },
-          child: child ?? const SizedBox.shrink(),
+          child: AssistiveBallWidget(
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
       home: isOnboardingCompleted
