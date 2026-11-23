@@ -259,12 +259,17 @@ class _AssistantScreenState extends State<AssistantScreen> {
                                                 children: [
                                                   const Icon(Icons.description_outlined, size: 13, color: AppTheme.accentColor),
                                                   const SizedBox(width: 6),
-                                                  Text(
-                                                    doc.title,
-                                                    style: const TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: AppTheme.textPrimary,
+                                                  ConstrainedBox(
+                                                    constraints: const BoxConstraints(maxWidth: 180),
+                                                    child: Text(
+                                                      doc.title,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: AppTheme.textPrimary,
+                                                      ),
                                                     ),
                                                   ),
                                                   const SizedBox(width: 4),

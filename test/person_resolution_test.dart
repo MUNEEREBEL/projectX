@@ -38,6 +38,9 @@ void main() {
     test('Rejects different people with same last name', () {
       expect(PersonResolutionEngine.isNameMatch('Rahul Sharma', 'Amit Sharma'), isFalse);
       expect(PersonResolutionEngine.isNameMatch('Suresh Kumar', 'Ramesh Kumar'), isFalse);
+      expect(PersonResolutionEngine.isNameMatch('Shaik Basha', 'Shaik Muneer'), isFalse);
+      expect(PersonResolutionEngine.isNameMatch('Shaik Mohd Basha', 'Shaik Mohd Muneer'), isFalse);
+      expect(PersonResolutionEngine.isNameMatch('Mohammed Abdul', 'Mohammed Muneer'), isFalse);
     });
   });
 }

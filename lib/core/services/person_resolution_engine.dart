@@ -25,19 +25,71 @@ class PersonResolutionEngine {
     String? gender,
     String? relationName,
     String? relationType,
+    bool isPrimaryCardholder = false,
+    String? relationshipToCardholder,
   }) async {
     final db = DatabaseService.instance;
     final existingPersons = await db.getAllPersons();
 
-    // 1. Try to find match among existing persons
+    if (existingPersons.isEmpty) {
+      final newPerson = Person(
+        id: _uuid.v4(),
+        name: holderName.trim().isEmpty ? 'Primary User' : holderName.trim(),
+        relationship: 'Self',
+        dob: dob,
+        gender: gender,
+        avatarColorIndex: 0,
+        createdAt: DateTime.now(),
+      );
+      await db.upsertPerson(newPerson);
+      return newPerson;
+    }
+
+    // 1. If explicitly verified by AI as the primary cardholder:
+    if (isPrimaryCardholder) {
+      final self = existingPersons.firstWhere(
+        (p) => p.relationship == 'Self',
+        orElse: () => existingPersons.first,
+      );
+      return self;
+    }
+
+    // 2. If explicitly designated as a non-Self family member (e.g. Father, Mother):
+    if (relationshipToCardholder != null && relationshipToCardholder.toLowerCase() != 'self') {
+      for (final person in existingPersons) {
+        if (person.relationship.toLowerCase() == relationshipToCardholder.toLowerCase()) {
+          if (isNameMatch(holderName, person.name)) {
+            return person;
+          }
+        }
+      }
+
+      for (final person in existingPersons) {
+        if (person.relationship != 'Self' && isNameMatch(holderName, person.name)) {
+          return person;
+        }
+      }
+
+      final newPerson = Person(
+        id: _uuid.v4(),
+        name: holderName.trim().isEmpty ? relationshipToCardholder : holderName.trim(),
+        relationship: relationshipToCardholder,
+        dob: dob,
+        gender: gender,
+        avatarColorIndex: existingPersons.length % 6,
+        createdAt: DateTime.now(),
+      );
+      await db.upsertPerson(newPerson);
+      return newPerson;
+    }
+
+    // 3. Try to find match among existing persons
     for (final person in existingPersons) {
       if (isNameMatch(holderName, person.name)) {
-        // Double check DOB if both have it
         if (dob != null && person.dob != null && dob.isNotEmpty && person.dob!.isNotEmpty) {
           if (dob == person.dob) {
             return person;
           }
-          // If DOB explicitly mismatches, might be senior/junior (father/son with same name)
           continue;
         } else {
           return person;
@@ -45,19 +97,15 @@ class PersonResolutionEngine {
       }
     }
 
-    // 2. If no match found, create a new Person profile
-    final isFirstPerson = existingPersons.isEmpty;
-    String relationship = isFirstPerson ? 'Self' : 'Family Member';
-
-    if (relationType != null && relationType.isNotEmpty) {
-      if (relationType.toLowerCase().contains('father')) {
-        relationship = 'Family Member';
-      }
+    // 4. Create new Person profile for this family member
+    String relationship = 'Family Member';
+    if (relationType != null && relationType.toLowerCase().contains('father')) {
+      relationship = 'Father';
     }
 
     final newPerson = Person(
       id: _uuid.v4(),
-      name: holderName.trim().isEmpty ? 'Unknown Person' : holderName.trim(),
+      name: holderName.trim().isEmpty ? 'Family Member' : holderName.trim(),
       relationship: relationship,
       dob: dob,
       gender: gender,
@@ -123,6 +171,14 @@ class PersonResolutionEngine {
     return false;
   }
 
+  static bool _isTokenOrInitialMatch(String a, String b) {
+    if (_isTokenMatch(a, b)) return true;
+    if ((a.length == 1 || b.length == 1) && a.isNotEmpty && b.isNotEmpty) {
+      return a[0] == b[0];
+    }
+    return false;
+  }
+
   /// Robust Indian name comparator handling inverted orders, initials, OCR typos and honorifics:
   /// e.g. "Muneer Shaik" == "Shaik Muneer"
   /// e.g. "Munfeer Shaik" == "Muneer Shaik" (OCR noise correction)
@@ -135,6 +191,16 @@ class PersonResolutionEngine {
     final tokensB = tokenizeName(nameB);
 
     if (tokensA.isEmpty || tokensB.isEmpty) return false;
+
+    // Conflicting distinctive tokens check:
+    // If nameA has an unmatched token AND nameB has an unmatched token, they are DIFFERENT family members!
+    final unmatchedA = tokensA.where((tA) => !tokensB.any((tB) => _isTokenOrInitialMatch(tA, tB))).toList();
+    final unmatchedB = tokensB.where((tB) => !tokensA.any((tA) => _isTokenOrInitialMatch(tA, tB))).toList();
+
+    if (unmatchedA.isNotEmpty && unmatchedB.isNotEmpty) {
+      // Both names have different distinct given names (e.g. "Shaik Basha" vs "Shaik Muneer")
+      return false;
+    }
 
     // Check direct equality or OCR typo equality for tokens
     int matchingTokens = 0;

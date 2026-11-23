@@ -261,6 +261,42 @@ class DatabaseService {
     } catch (_) {}
   }
 
+  Future<int> cleanupDuplicates() async {
+    final allDocs = await getAllDocuments();
+    final seen = <String, DocumentModel>{};
+    final toDelete = <String>[];
+
+    for (final doc in allDocs) {
+      // Normalize clean filename
+      var clean = doc.fileName.toLowerCase();
+      clean = clean.replaceFirst(RegExp(r'^(vault_staging_|vault_import_|vault_permanent_)+'), '');
+      clean = clean.replaceFirst(RegExp(r'^\d+_'), '');
+
+      final key = (doc.idNumber != null && doc.idNumber!.trim().isNotEmpty)
+          ? '${doc.docType}_${doc.idNumber!.replaceAll(" ", "").toLowerCase()}'
+          : clean;
+
+      if (seen.containsKey(key)) {
+        // Duplicate found! Keep the one that is verified or has an ID number
+        final existing = seen[key]!;
+        if (!existing.isVerified && doc.isVerified) {
+          toDelete.add(existing.id);
+          seen[key] = doc;
+        } else {
+          toDelete.add(doc.id);
+        }
+      } else {
+        seen[key] = doc;
+      }
+    }
+
+    for (final id in toDelete) {
+      await deleteDocument(id);
+    }
+
+    return toDelete.length;
+  }
+
   Future<void> clearAllData() async {
     final db = await database;
     await db.delete('document_fields');

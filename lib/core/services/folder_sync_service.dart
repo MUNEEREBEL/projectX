@@ -55,6 +55,13 @@ class FolderSyncService {
   static const supportedExtensions = {'.pdf', '.png', '.jpg', '.jpeg', '.docx'};
   static const MethodChannel _storageChannel = MethodChannel('com.example.x/storage_channel');
 
+  static String canonicalFileName(String pathOrName) {
+    var clean = p.basename(pathOrName).toLowerCase();
+    clean = clean.replaceFirst(RegExp(r'^(vault_staging_|vault_import_|vault_permanent_)+'), '');
+    clean = clean.replaceFirst(RegExp(r'^\d+_'), '');
+    return clean.trim();
+  }
+
   static Future<String?> getSelectedFolderPath() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_prefFolderPath);
@@ -251,26 +258,16 @@ class FolderSyncService {
     }
 
     final db = DatabaseService.instance;
+    await db.cleanupDuplicates();
+
     final vaultDir = await getPermanentVaultDirectory();
     final existingDocs = await db.getAllDocuments();
-    final existingFileNames = existingDocs.map((d) => d.fileName.toLowerCase()).toSet();
-
-    // Helper to strip staging timestamps and get clean original filename
-    String getCleanName(String filePath) {
-      String clean = p.basename(filePath);
-      if (clean.startsWith('vault_staging_') || clean.startsWith('vault_import_')) {
-        final parts = clean.split('_');
-        if (parts.length >= 3) {
-          clean = parts.sublist(2).join('_');
-        }
-      }
-      return clean.toLowerCase();
-    }
+    final existingCanonicalNames = existingDocs.map((d) => canonicalFileName(d.fileName)).toSet();
 
     // Filter files that are not already indexed - only scan genuinely new files!
     final newFiles = files.where((f) {
-      final clean = getCleanName(f.path);
-      return !existingFileNames.contains(clean);
+      final canonical = canonicalFileName(f.path);
+      return !existingCanonicalNames.contains(canonical);
     }).toList();
 
     if (newFiles.isEmpty) {
@@ -323,15 +320,7 @@ class FolderSyncService {
     final List<({File permanentFile, DocumentModel doc, String cleanName})> stagedList = [];
 
     for (final file in newFiles) {
-      final originalName = p.basename(file.path);
-      String cleanName = originalName;
-      if (cleanName.startsWith('vault_staging_') || cleanName.startsWith('vault_import_')) {
-        final parts = cleanName.split('_');
-        if (parts.length >= 3) {
-          cleanName = parts.sublist(2).join('_');
-        }
-      }
-
+      final cleanName = canonicalFileName(file.path);
       final safeBaseName = cleanName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
       final permanentFilePath = p.join(vaultDir.path, '${DateTime.now().millisecondsSinceEpoch}_$safeBaseName');
       final permanentFile = await file.copy(permanentFilePath);
@@ -412,7 +401,41 @@ class FolderSyncService {
             gender: extractResult.gender,
             relationName: extractResult.relationName,
             relationType: extractResult.relationType,
+            isPrimaryCardholder: extractResult.isPrimaryCardholder,
+            relationshipToCardholder: extractResult.relationshipToCardholder,
           );
+
+          // If father/relative is extracted, ensure a profile exists for them in persons table
+          if (extractResult.relationName != null && extractResult.relationName!.trim().isNotEmpty) {
+            final relName = extractResult.relationName!.trim();
+            final relType = extractResult.relationType ?? 'Father';
+            final existingPersons = await db.getAllPersons();
+            if (!existingPersons.any((p) => PersonResolutionEngine.isNameMatch(p.name, relName))) {
+              await db.upsertPerson(Person(
+                id: _uuid.v4(),
+                name: relName,
+                relationship: relType,
+                avatarColorIndex: (existingPersons.length + 1) % 6,
+              ));
+            }
+          }
+
+          // If family members are present (e.g. Ration Card), create Person profiles for them too
+          for (final member in extractResult.familyMembers) {
+            final mName = member['name'] ?? '';
+            final mRel = member['relationship'] ?? 'Family Member';
+            if (mName.isNotEmpty && !PersonResolutionEngine.isNameMatch(mName, ownerName)) {
+              final existingPersons = await db.getAllPersons();
+              if (!existingPersons.any((p) => PersonResolutionEngine.isNameMatch(p.name, mName))) {
+                await db.upsertPerson(Person(
+                  id: _uuid.v4(),
+                  name: mName,
+                  relationship: mRel,
+                  avatarColorIndex: (existingPersons.length + 2) % 6,
+                ));
+              }
+            }
+          }
 
           DateTime? issueDate;
           if (extractResult.issueDate != null) {
@@ -424,9 +447,15 @@ class FolderSyncService {
             expiryDate = DateTime.tryParse(extractResult.expiryDate!);
           }
 
-          final cleanTitle = (extractResult.documentTitle != null && extractResult.documentTitle!.trim().isNotEmpty)
+          var cleanTitle = (extractResult.documentTitle != null && extractResult.documentTitle!.trim().isNotEmpty)
               ? extractResult.documentTitle!.trim()
               : _formatDocType(extractResult.docType);
+          cleanTitle = cleanTitle.replaceAll(RegExp(r'\.(pdf|png|jpg|jpeg|docx)$', caseSensitive: false), '');
+          cleanTitle = cleanTitle.replaceFirst(RegExp(r'^(vault_staging_|vault_import_|vault_permanent_)+'), '');
+          cleanTitle = cleanTitle.replaceFirst(RegExp(r'^\d+_'), '');
+          if (cleanTitle.length > 35) {
+            cleanTitle = '${cleanTitle.substring(0, 32)}...';
+          }
 
           final updatedDoc = DocumentModel(
             id: item.doc.id,
@@ -457,7 +486,6 @@ class FolderSyncService {
             }
           }
 
-          // Use the verified, normalized cardholder name to eliminate any OCR typo (e.g. Munfeer -> Muneer)
           addField('Full Name', person.name, 'identity');
           if (extractResult.idNumber != null && extractResult.idNumber!.trim().isNotEmpty) {
             addField('${_formatDocType(extractResult.docType)} Number', extractResult.idNumber, 'identity');
@@ -467,10 +495,25 @@ class FolderSyncService {
           }
           addField('Date of Birth', extractResult.dob, 'date');
           addField('Gender', extractResult.gender, 'identity');
+          addField('Mobile Number', extractResult.mobileNumber, 'contact');
+          addField('Bank Name', extractResult.bankName, 'financial');
+          addField('Account Number', extractResult.accountNumber, 'financial');
+          addField('IFSC Code', extractResult.ifscCode, 'financial');
+          addField('Branch', extractResult.branch, 'financial');
+          addField('CIF Number', extractResult.cifNumber, 'financial');
+          addField('MICR Code', extractResult.micrCode, 'financial');
           addField('Issue Date', extractResult.issueDate, 'date');
           addField('Expiry Date', extractResult.expiryDate, 'date');
           addField('Full Address', extractResult.address, 'address');
           addField('PIN Code', extractResult.pinCode, 'address');
+
+          for (final member in extractResult.familyMembers) {
+            final mName = member['name'];
+            final mRel = member['relationship'] ?? 'Member';
+            if (mName != null && mName.isNotEmpty) {
+              addField('Family Member: $mName', mRel, 'identity');
+            }
+          }
 
           // Extract all rich certificate & document fields into database
           extractResult.extraFields.forEach((k, v) {

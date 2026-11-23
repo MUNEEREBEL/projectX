@@ -108,24 +108,32 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               child: const Icon(Icons.shield_outlined, color: AppTheme.accentColor, size: 18),
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _ownerName,
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: -0.3),
-                ),
-                const Row(
-                  children: [
-                    Icon(Icons.lock, size: 10, color: AppTheme.successColor),
-                    SizedBox(width: 4),
-                    Text(
-                      'Zero-Knowledge Encrypted Vault',
-                      style: TextStyle(fontSize: 10, color: AppTheme.textMuted, fontWeight: FontWeight.w500),
-                    ),
-                  ],
-                ),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _ownerName,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: -0.3),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const Row(
+                    children: [
+                      Icon(Icons.lock, size: 10, color: AppTheme.successColor),
+                      SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'Zero-Knowledge Encrypted Vault',
+                          style: TextStyle(fontSize: 10, color: AppTheme.textMuted, fontWeight: FontWeight.w500),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -246,7 +254,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                   }
                                 },
                           icon: const Icon(Icons.folder_open, size: 14),
-                          label: const Text('Change Folder', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          label: const Text(
+                            'Change Folder',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
                     ],

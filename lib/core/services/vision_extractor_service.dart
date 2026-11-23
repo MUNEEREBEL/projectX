@@ -23,6 +23,16 @@ class ExtractionResult {
   final String? expiryDate;
   final String? address;
   final String? pinCode;
+  final String? mobileNumber;
+  final String? ifscCode;
+  final String? bankName;
+  final String? accountNumber;
+  final String? branch;
+  final String? cifNumber;
+  final String? micrCode;
+  final bool isPrimaryCardholder;
+  final String? relationshipToCardholder;
+  final List<Map<String, String>> familyMembers;
   final Map<String, String> extraFields;
   final Map<String, String> subjectMarks;
   final bool isChecksumValid;
@@ -42,6 +52,16 @@ class ExtractionResult {
     this.expiryDate,
     this.address,
     this.pinCode,
+    this.mobileNumber,
+    this.ifscCode,
+    this.bankName,
+    this.accountNumber,
+    this.branch,
+    this.cifNumber,
+    this.micrCode,
+    this.isPrimaryCardholder = false,
+    this.relationshipToCardholder,
+    this.familyMembers = const [],
     this.extraFields = const {},
     this.subjectMarks = const {},
     this.isChecksumValid = true,
@@ -63,6 +83,16 @@ class ExtractionResult {
       'expiry_date': expiryDate,
       'address': address,
       'pin_code': pinCode,
+      'mobile_number': mobileNumber,
+      'ifsc_code': ifscCode,
+      'bank_name': bankName,
+      'account_number': accountNumber,
+      'branch': branch,
+      'cif_number': cifNumber,
+      'micr_code': micrCode,
+      'is_primary_cardholder': isPrimaryCardholder,
+      'relationship_to_cardholder': relationshipToCardholder,
+      'family_members': familyMembers,
       'extra_fields': extraFields,
       'subject_marks': subjectMarks,
       'is_checksum_valid': isChecksumValid,
@@ -123,12 +153,45 @@ You are an expert Indian Government Document, Certificate & Academic Verificatio
 Analyze this document image/text and extract all structured fields into JSON.
 
 CRITICAL EXTRACTION & ACCURACY RULES:
-1. PRIMARY CARDHOLDER NAME ANCHOR:
-   The primary user of this vault is "$cardholderAnchor".
-   - Official Indian documents frequently use inverted naming (e.g. "Shaik Muneer" vs "Muneer Shaik").
-   - DO NOT hallucinate characters or misread scan artifacts. For example, never misread "Muneer" as "Munfeer". If the document belongs to the cardholder, use the verified spelling "$cardholderAnchor".
+1. ACCURATE PERSON & FAMILY MEMBER DISAMBIGUATION:
+   The primary cardholder registered in this vault is "$cardholderAnchor".
+   - DO NOT FORCIBLY ASSIGN "$cardholderAnchor" TO DOCUMENTS THAT BELONG TO SOMEONE ELSE!
+   - If an Aadhaar card, PAN card, driving license, or certificate belongs to the user's father, mother, spouse, or another family member, "holder_name" MUST be that person's exact name printed on the card!
+   - Look at the photo and printed name:
+     - If it matches "$cardholderAnchor" (allowing Indian inverted names, e.g. "Shaik Muneer" vs "Muneer Shaik"):
+       Set "is_primary_cardholder": true
+       Set "relationship_to_cardholder": "Self"
+       Set "document_title": e.g. "Aadhaar Card", "PAN Card", "Class 10th Marksheet"
+     - If it belongs to Father or another person:
+       Set "is_primary_cardholder": false
+       Set "relationship_to_cardholder": "Father" (or "Mother", "Spouse", etc.)
+       Set "document_title": e.g. "Father's Aadhaar Card", "Father's PAN Card"
 
-2. FATHER / PARENT / RELATION NAME DETECTION:
+2. BANK PASSBOOK / STATEMENT / CHEQUE:
+   - doc_type: "BANK_PASSBOOK"
+   - category: "Financial"
+   - You MUST extract:
+     - "bank_name": (e.g. "State Bank of India", "HDFC Bank", "Punjab National Bank", "Canara Bank", "ICICI Bank", "Axis Bank", "Union Bank")
+     - "account_number": Full bank account number
+     - "ifsc_code": The 11-character alphanumeric IFSC code (e.g. "SBIN0001234", "HDFC0000245"). Extract every single character accurately!
+     - "branch": Branch name / location (e.g. "Main Branch Hyderabad")
+     - "cif_number": CIF number / Customer ID if present
+     - "micr_code": 9-digit MICR code if present
+     - "document_title": "[Bank Name] Passbook" (e.g. "SBI Passbook", "HDFC Passbook")
+
+3. RATION CARD & FAMILY MEMBERS:
+   - doc_type: "RATION_CARD"
+   - category: "Identity"
+   - "document_title": "Ration Card"
+   - "id_number": Ration Card Number / RC No / Food Security Card No
+   - "holder_name": Head of Family (usually Father or Mother)
+   - "family_members": Extract all family members listed on the card as a list of objects:
+     [{"name": "Full Name", "relationship": "Head / Father / Son / Daughter / Wife / Mother"}]
+
+4. MOBILE NUMBER EXTRACTION:
+   - If a 10-digit mobile number or phone number is visible anywhere on any document (Aadhaar, Bank Passbook, Insurance, Certificates, Application forms), extract it into "mobile_number".
+
+5. FATHER / PARENT / RELATION NAME DETECTION:
    - On Certificates (EWS, Caste, Income, Domicile):
      The document almost always states:
      "This is to certify that Shri/Kumari [APPLICANT NAME] son/daughter/ward of Shri [FATHER NAME]..."
@@ -141,7 +204,7 @@ CRITICAL EXTRACTION & ACCURACY RULES:
      The government officer who signed or issued the certificate (e.g. Tahsildar, Revenue Officer, SDM, Revenue Divisional Officer, District Collector, Registrar, Controller of Examinations) is the ISSUING AUTHORITY, NEVER the father!
      NEVER place the signing officer or Tahsildar in "relation_name"! Put them in "issuing_authority".
 
-3. EXPIRY DATE & VALIDITY RULES (CRITICAL):
+6. EXPIRY DATE & VALIDITY RULES (CRITICAL):
    - EWS CERTIFICATE: In India, an EWS Certificate is strictly valid for ONE financial year only! Look for "Valid for the year: YYYY-YYYY" or "Financial Year: YYYY-YYYY".
      If it states "Valid for the year 2023-2024", the certificate EXPIRES on "2024-03-31".
      If it states "Valid for the year 2024-2025", the certificate EXPIRES on "2025-03-31".
@@ -153,7 +216,7 @@ CRITICAL EXTRACTION & ACCURACY RULES:
    - PASSPORT: Extract "Date of Expiry".
    - NON-EXPIRING: Aadhaar, PAN, Caste Certificate, Marksheets, Degree Certificates, and Birth Certificates do NOT expire. Set "expiry_date": null.
 
-4. ACADEMIC MARKSHEETS & CERTIFICATES:
+7. ACADEMIC MARKSHEETS & CERTIFICATES:
    - PRECISE DOCUMENT TITLE WITH SEMESTER OR CLASS:
      If the document is a marksheet or grade sheet, check for semester or academic class:
      - If it is for Class 10 / SSC: "Class 10th Marksheet (SSC)"
@@ -180,6 +243,8 @@ Supported document types:
 - BIRTH_CERTIFICATE (Birth Certificate)
 - AADHAAR (Aadhaar Card)
 - PAN (Permanent Account Number)
+- BANK_PASSBOOK (Bank Passbook / Statement / Cheque)
+- RATION_CARD (Ration Card / Food Security Card)
 - DRIVING_LICENSE (Indian Driving License)
 - PASSPORT (Indian Passport)
 - VEHICLE_RC (Registration Certificate)
@@ -202,34 +267,49 @@ Output MUST strictly follow this JSON schema:
 {
   "doc_type": "string",
   "category": "string",
-  "document_title": "string (Clean, proper title: e.g. 'Class 10th Marksheet (SSC)', 'B.Tech Semester 4 Grade Sheet', 'PAN Card', 'Income Certificate', 'EWS Certificate', 'Driving License', 'Vehicle RC')",
-  "holder_name": "string (Full Name of the cardholder/applicant/student)",
+  "document_title": "string (Clean, proper short title under 35 chars: e.g. 'Class 10th Marksheet (SSC)', 'Father\\'s Aadhaar Card', 'PAN Card', 'SBI Passbook', 'Income Certificate', 'EWS Certificate')",
+  "holder_name": "string (Full Name of the cardholder/applicant/student/account holder)",
+  "is_primary_cardholder": true,
+  "relationship_to_cardholder": "string ('Self', 'Father', 'Mother', 'Spouse', 'Child', 'Other')",
   "relation_name": "string or null (ONLY actual Father/Husband/Spouse name. NEVER the Tahsildar or officer)",
   "relation_type": "string or null ('Father', 'Husband', 'Spouse', 'Mother')",
-  "id_number": "string or null (Certificate number, Aadhaar, PAN, DL, Passport, Roll Number, RC number)",
+  "id_number": "string or null (Certificate number, Aadhaar, PAN, DL, Passport, Account Number, Roll Number, RC number)",
+  "mobile_number": "string or null (10-digit mobile number if printed anywhere)",
+  "bank_name": "string or null (e.g. 'State Bank of India', 'HDFC Bank')",
+  "account_number": "string or null",
+  "ifsc_code": "string or null (11-digit IFSC code e.g. 'SBIN0001234')",
+  "branch": "string or null",
+  "cif_number": "string or null",
+  "micr_code": "string or null",
+  "family_members": [
+    {
+      "name": "string",
+      "relationship": "string"
+    }
+  ],
   "dob": "string or null (YYYY-MM-DD format)",
   "gender": "string or null ('Male', 'Female', 'Other')",
   "issue_date": "string or null (YYYY-MM-DD)",
-  "expiry_date": "string or null (YYYY-MM-DD, e.g. valid financial year end 2024-03-31 for EWS 2023-2024, license validity, insurance expiry)",
+  "expiry_date": "string or null (YYYY-MM-DD)",
   "address": "string or null (complete address)",
   "pin_code": "string or null (6-digit PIN code)",
   "subject_marks": {
     "Subject Name": "Marks or Grade (e.g. 95 or A+)"
   },
   "extra_fields": {
-    "semester": "string or null (e.g. 4th Semester, Semester 3)",
-    "sgpa": "string or null (Semester Grade Point Average)",
-    "cgpa": "string or null (Cumulative Grade Point Average)",
+    "semester": "string or null",
+    "sgpa": "string or null",
+    "cgpa": "string or null",
     "percentage": "string or null",
     "total_marks": "string or null",
     "roll_number": "string or null",
     "institution_name": "string or null",
     "board_or_university": "string or null",
     "passing_year": "string or null",
-    "issuing_authority": "string or null (e.g. Tahsildar, Revenue Officer, SDM)",
+    "issuing_authority": "string or null",
     "issuing_district_or_state": "string or null",
-    "financial_year": "string or null (e.g. 2023-2024)",
-    "valid_year": "string or null (e.g. 2023-2024)",
+    "financial_year": "string or null",
+    "valid_year": "string or null",
     "sub_caste_or_category": "string or null",
     "annual_family_income": "string or null"
   }
@@ -378,6 +458,28 @@ Output MUST strictly follow this JSON schema:
       String? expiryDate = data['expiry_date'] as String?;
       final address = data['address'] as String?;
       final pinCode = data['pin_code'] as String?;
+      final mobileNumber = (data['mobile_number'] as String?)?.trim();
+      final bankName = (data['bank_name'] as String?)?.trim();
+      final accountNumber = (data['account_number'] as String?)?.trim();
+      final ifscCode = (data['ifsc_code'] as String?)?.trim().toUpperCase();
+      final branch = (data['branch'] as String?)?.trim();
+      final cifNumber = (data['cif_number'] as String?)?.trim();
+      final micrCode = (data['micr_code'] as String?)?.trim();
+      final isPrimaryCardholder = data['is_primary_cardholder'] == true;
+      final relationshipToCardholder = data['relationship_to_cardholder'] as String?;
+
+      List<Map<String, String>> familyMembers = [];
+      if (data['family_members'] is List) {
+        for (final item in data['family_members']) {
+          if (item is Map) {
+            final name = item['name']?.toString().trim() ?? '';
+            final rel = item['relationship']?.toString().trim() ?? 'Member';
+            if (name.isNotEmpty) {
+              familyMembers.add({'name': name, 'relationship': rel});
+            }
+          }
+        }
+      }
       
       Map<String, String> extraFields = {};
       if (data['extra_fields'] is Map) {
@@ -447,6 +549,16 @@ Output MUST strictly follow this JSON schema:
         expiryDate: expiryDate,
         address: address,
         pinCode: pinCode,
+        mobileNumber: mobileNumber,
+        ifscCode: ifscCode,
+        bankName: bankName,
+        accountNumber: accountNumber,
+        branch: branch,
+        cifNumber: cifNumber,
+        micrCode: micrCode,
+        isPrimaryCardholder: isPrimaryCardholder,
+        relationshipToCardholder: relationshipToCardholder,
+        familyMembers: familyMembers,
         extraFields: extraFields,
         subjectMarks: subjectMarks,
         isChecksumValid: isChecksumValid,

@@ -147,7 +147,8 @@ class MainActivity : FlutterActivity() {
                             val name = child.name ?: continue
                             val ext = name.substringAfterLast('.', "").lowercase()
                             if (ext in supportedExts) {
-                                val cachedFile = File(applicationContext.cacheDir, "vault_staging_${System.currentTimeMillis()}_$name")
+                                val safeName = name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                                val cachedFile = File(applicationContext.cacheDir, "vault_staging_$safeName")
                                 copyOrDownsample(child.uri, cachedFile, ext)
                                 matchingPaths.add(cachedFile.absolutePath)
                             }
@@ -182,7 +183,8 @@ class MainActivity : FlutterActivity() {
                                 val name = child.name ?: continue
                                 val ext = name.substringAfterLast('.', "").lowercase()
                                 if (ext in supportedExts) {
-                                    val cachedFile = File(applicationContext.cacheDir, "vault_staging_${System.currentTimeMillis()}_$name")
+                                    val safeName = name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                                    val cachedFile = File(applicationContext.cacheDir, "vault_staging_$safeName")
                                     copyOrDownsample(child.uri, cachedFile, ext)
                                     matchingPaths.add(cachedFile.absolutePath)
                                 }

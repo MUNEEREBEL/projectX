@@ -133,22 +133,27 @@ CRITICAL HUMAN CONVERSATIONAL & ACCURACY RULES:
 2. Handling Multiple Family Members:
    - The vault manages documents for multiple people (e.g. Self, Father, Mother, Spouse, Children).
    - Pay close attention to who the question is about:
-     - "my": refers to the primary vault cardholder (Self).
+     - "my": ALWAYS refers to the primary cardholder (Self).
      - "my father's" / "my dad's": refers specifically to the Father's documents.
      - "my mother's" / "my mom's": refers specifically to the Mother's documents.
-   - If the user asks for a document without specifying a person and multiple family members have that document, give the primary user's first and politely mention the family member's details as well.
+   - If the user asks for "my aadhar number", give the primary cardholder's Aadhaar number ONLY. DO NOT give their father's Aadhaar number!
+   - If the user asks for their father's Aadhaar or document, look under the documents owned by Father and answer with the father's details.
 
-3. Accurate Numbers, Dates & Expiries:
+3. Mobile Numbers & Bank Details (IFSC, Account Number):
+   - Mobile Number: If asked "What is my mobile number?", search the verified 'Mobile Number' or 'Phone' fields in the context and provide it directly.
+   - Bank Passbook & IFSC: If asked for IFSC code, account number, or bank details, check the Financial / Bank Passbook records in the context and provide the exact 11-digit IFSC code (e.g. SBIN0001234) and account number.
+
+4. Accurate Numbers, Dates & Expiries:
    - Age: Use the exact Ground Truth Age provided in the context.
    - Marksheet & Subject Marks: Directly quote exact SGPA, CGPA, percentage, or roll numbers. If asked for individual subject marks (e.g. Mathematics, Science, English, Hindi, etc.) or a summary of grades, list the exact marks or grades found in the "Subject:" records.
    - Expiries: Compare against today's date. Clearly note whether a certificate is valid or expired. If expired, state clearly when it expired rather than showing negative days. Remember EWS certificates are valid for 1 financial year only.
 
-4. If asked whether this AI chat requires internet:
+5. If asked whether this AI chat requires internet:
    - Answer warmly: "Yes, chatting with me requires an active internet connection because Gemini processes your questions in the cloud, but all your personal documents and vault files are stored 100% privately on your device."
 
-5. Reference Documents:
-   - At the very end of your response, on a new line, list the document IDs used to answer in this exact syntax:
-   [REFS: <doc_id_1>, <doc_id_2>]
+6. Reference Documents:
+   - At the very end of your response, on a new line, list ONLY the 1 or 2 specific document IDs that actually contained the answer:
+   [REFS: <doc_id>]
 '''),
         );
 
@@ -184,17 +189,31 @@ $contextBuffer
             .replaceAll('##', '')
             .trim();
 
-        // Fallback reference matching by document title if none tagged
+        // Fallback reference matching: ONLY if no [REFS] were generated and answer quotes document ID number or exact title
         if (referencedDocs.isEmpty) {
           for (final doc in documents) {
-            if (rawAnswer.toLowerCase().contains(doc.title.toLowerCase()) ||
-                (doc.docType != 'OTHER' && rawAnswer.toLowerCase().contains(doc.docType.toLowerCase().replaceAll('_', ' ')))) {
+            if (doc.idNumber != null && doc.idNumber!.length >= 6 && rawAnswer.contains(doc.idNumber!)) {
+              if (!referencedDocs.any((d) => d.id == doc.id)) {
+                referencedDocs.add(doc);
+              }
+            } else if (doc.title.length >= 6 && rawAnswer.toLowerCase().contains(doc.title.toLowerCase())) {
               if (!referencedDocs.any((d) => d.id == doc.id)) {
                 referencedDocs.add(doc);
               }
             }
           }
         }
+
+        // Strictly deduplicate and limit to at most 2 relevant documents
+        final uniqueDocIds = <String>{};
+        final limitedDocs = <DocumentModel>[];
+        for (final d in referencedDocs) {
+          if (!uniqueDocIds.contains(d.id)) {
+            uniqueDocIds.add(d.id);
+            limitedDocs.add(d);
+          }
+        }
+        referencedDocs = limitedDocs.take(2).toList();
 
         // Extract copyable candidates (numbers, codes)
         final copyableRegex = RegExp(r'\b([A-Z0-9]{5,20}|\d{4}\s?\d{4}\s?\d{4})\b');

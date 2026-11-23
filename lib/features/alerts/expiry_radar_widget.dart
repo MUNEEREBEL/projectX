@@ -74,7 +74,7 @@ class ExpiryRadarWidget extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 105,
+          height: 118,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -89,7 +89,7 @@ class ExpiryRadarWidget extends StatelessWidget {
               return GestureDetector(
                 onTap: () => onDocTap(doc),
                 child: Container(
-                  width: 230,
+                  width: 235,
                   margin: const EdgeInsets.only(right: 10),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(

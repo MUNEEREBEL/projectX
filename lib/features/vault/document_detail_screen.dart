@@ -253,11 +253,12 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                       ],
                     ),
                   ),
-                  ElevatedButton.icon(
+                  const SizedBox(width: 8),
+                  FilledButton.tonalIcon(
                     onPressed: _shareDocumentFile,
                     icon: const Icon(Icons.open_in_new, size: 14),
-                    label: const Text('Open / Share', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                    style: ElevatedButton.styleFrom(
+                    label: const Text('Open', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     ),
                   ),
