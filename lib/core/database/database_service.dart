@@ -197,6 +197,26 @@ class DatabaseService {
     await db.delete('alerts', where: 'document_id = ?', whereArgs: [id]);
   }
 
+  Future<void> updateDocumentField(DocumentField field) async {
+    final db = await database;
+    await db.update(
+      'document_fields',
+      field.toMap(),
+      where: 'id = ?',
+      whereArgs: [field.id],
+    );
+  }
+
+  Future<void> updateDocument(DocumentModel document) async {
+    final db = await database;
+    await db.update(
+      'documents',
+      document.toMap(),
+      where: 'id = ?',
+      whereArgs: [document.id],
+    );
+  }
+
   // --- Fields ---
   Future<List<DocumentField>> getFieldsForDocument(String documentId) async {
     final db = await database;

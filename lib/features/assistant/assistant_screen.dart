@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../models/document_model.dart';
 import '../../core/services/qa_assistant_service.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/theme/glass_card.dart';
 import '../vault/document_detail_screen.dart';
 
 class ChatMessage {
@@ -30,18 +27,39 @@ class AssistantScreen extends StatefulWidget {
 class _AssistantScreenState extends State<AssistantScreen> {
   final List<ChatMessage> _messages = [
     ChatMessage(
-      text: 'Project X Intelligence Assistant ready. Ask for any policy numbers, expiry dates, registered addresses, or cardholder details.',
+      text: 'When does my car insurance expire?',
+      isUser: true,
+    ),
+    ChatMessage(
+      text: 'Your car insurance (Policy #1042-M) for the Honda City expires on 18th December 2026. This is in 25 days.',
       isUser: false,
+      referenceDocuments: [
+        DocumentModel(
+          id: 'ref-car',
+          personId: 'father',
+          docType: 'VEHICLE_INSURANCE',
+          category: 'Vehicle',
+          title: 'Car Insurance - Father',
+          idNumber: '1042-M',
+          filePath: '',
+          fileName: 'car_insurance.pdf',
+          fileType: 'pdf',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      ],
     ),
   ];
+
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
 
   final List<String> _suggestions = [
-    'When does my car insurance expire?',
-    'What is my PAN number?',
-    'Show full permanent address with pin code',
-    'Which documents are expiring soon?',
+    'What is my PAN?',
+    'When does car insurance expire?',
+    'What is my father\'s Aadhaar?',
+    'Show full permanent address',
   ];
 
   void _sendMessage([String? presetText]) async {
@@ -55,6 +73,8 @@ class _AssistantScreenState extends State<AssistantScreen> {
       _isLoading = true;
     });
 
+    _scrollToBottom();
+
     try {
       final response = await QAAssistantService.askQuestion(text);
       if (mounted) {
@@ -67,6 +87,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
           ));
           _isLoading = false;
         });
+        _scrollToBottom();
       }
     } catch (e) {
       if (mounted) {
@@ -77,322 +98,381 @@ class _AssistantScreenState extends State<AssistantScreen> {
           ));
           _isLoading = false;
         });
+        _scrollToBottom();
       }
     }
   }
 
-  void _copyToClipboard(String value) {
-    Clipboard.setData(ClipboardData(text: value));
-    HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Copied "$value" to clipboard'),
-        duration: const Duration(seconds: 1),
-        backgroundColor: AppTheme.darkCard,
-      ),
-    );
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('Document Intelligence Q&A'),
-      ),
-      body: Column(
-        children: [
-          // Messages View
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[index];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Row(
-                    mainAxisAlignment:
-                        msg.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (!msg.isUser) ...[
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppTheme.primaryColor.withValues(alpha: 0.3),
-                                AppTheme.accentColor.withValues(alpha: 0.2),
-                              ],
-                            ),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppTheme.glassBorder),
-                          ),
-                          child: const Icon(Icons.bolt, color: AppTheme.accentColor, size: 18),
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      Flexible(
-                        child: msg.isUser
-                            ? Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFF2563EB),
-                                      Color(0xFF1D4ED8),
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                                child: SelectableText(
-                                  msg.text,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    height: 1.4,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              )
-                            : GlassCard(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                borderRadius: 16,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    SelectableText(
-                                      msg.text,
-                                      style: const TextStyle(
-                                        color: AppTheme.textPrimary,
-                                        fontSize: 13,
-                                        height: 1.45,
-                                      ),
-                                    ),
-                                    if (msg.copyableValues.isNotEmpty) ...[
-                                      const SizedBox(height: 10),
-                                      const Text(
-                                        'Tap to copy field:',
-                                        style: TextStyle(fontSize: 10, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Wrap(
-                                        spacing: 6,
-                                        runSpacing: 6,
-                                        children: msg.copyableValues.map((val) {
-                                          return InkWell(
-                                            onTap: () => _copyToClipboard(val),
-                                            borderRadius: BorderRadius.circular(8),
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: AppTheme.primaryColor.withValues(alpha: 0.08),
-                                                borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.25)),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  const Icon(Icons.copy, size: 11, color: AppTheme.accentColor),
-                                                  const SizedBox(width: 5),
-                                                  Text(
-                                                    val,
-                                                    style: const TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w700,
-                                                      fontFamily: 'monospace',
-                                                      color: AppTheme.textPrimary,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ],
-                                    if (msg.referenceDocuments.isNotEmpty) ...[
-                                      const SizedBox(height: 12),
-                                      const Row(
-                                        children: [
-                                          Icon(Icons.attachment, size: 12, color: AppTheme.accentColor),
-                                          SizedBox(width: 4),
-                                          Text(
-                                            'Reference Documents (tap to view):',
-                                            style: TextStyle(fontSize: 10, color: AppTheme.accentColor, fontWeight: FontWeight.w600),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Wrap(
-                                        spacing: 6,
-                                        runSpacing: 6,
-                                        children: msg.referenceDocuments.map((doc) {
-                                          return InkWell(
-                                            onTap: () {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (_) => DocumentDetailScreen(document: doc),
-                                                ),
-                                              );
-                                            },
-                                            borderRadius: BorderRadius.circular(8),
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                              decoration: BoxDecoration(
-                                                color: AppTheme.primaryColor.withValues(alpha: 0.18),
-                                                borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.4)),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  const Icon(Icons.description_outlined, size: 13, color: AppTheme.accentColor),
-                                                  const SizedBox(width: 6),
-                                                  ConstrainedBox(
-                                                    constraints: const BoxConstraints(maxWidth: 180),
-                                                    child: Text(
-                                                      doc.title,
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                      style: const TextStyle(
-                                                        fontSize: 11,
-                                                        fontWeight: FontWeight.w600,
-                                                        color: AppTheme.textPrimary,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  const Icon(Icons.arrow_forward_ios, size: 8, color: AppTheme.textMuted),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: [0.0, 0.35, 0.7, 1.0],
+            colors: [
+              Color(0xFFEFF6FF), // soft airy blue top
+              Color(0xFFF8FAFC), // clean white slate
+              Color(0xFFFDF2F8), // gentle blush accent
+              Color(0xFFEBF4FF), // soft glow bottom
+            ],
           ),
-
-          if (_isLoading)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentColor),
-                  ),
-                  const SizedBox(width: 8),
-                  Text('Retrieving grounded answer...', style: TextStyle(color: AppTheme.accentColor.withValues(alpha: 0.8), fontSize: 11)),
-                ],
-              ),
-            ),
-
-          // Suggestion Chips
-          SizedBox(
-            height: 36,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _suggestions.length,
-              itemBuilder: (context, index) {
-                final suggestion = _suggestions[index];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: InkWell(
-                    onTap: _isLoading ? null : () => _sendMessage(suggestion),
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              // 1. TOP HEADER: "Project X Assistant" & "Online"
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Project X Assistant',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.90),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppTheme.glassBorder),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF0F172A).withValues(alpha: 0.03),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          const Text(
+                            'Online',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF16A34A),
+                            ),
                           ),
                         ],
                       ),
-                      child: Text(
-                        suggestion,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
-                      ),
                     ),
+                  ],
+                ),
+              ),
+
+              // 2. SUGGESTION CHIPS
+              SizedBox(
+                height: 36,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: _suggestions.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final suggestion = _suggestions[index];
+                    return InkWell(
+                      onTap: () => _sendMessage(suggestion),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Text(
+                          suggestion,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // 3. CHAT MESSAGES LIST
+              Expanded(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: _messages.length,
+                  itemBuilder: (context, index) {
+                    final message = _messages[index];
+                    return _buildMessageBubble(message);
+                  },
+                ),
+              ),
+
+              if (_isLoading)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  child: Row(
+                    children: const [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0F172A)),
+                      ),
+                      SizedBox(width: 10),
+                      Text(
+                        'Searching verified vault documents...',
+                        style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+                      ),
+                    ],
                   ),
-                );
-              },
+                ),
+
+              // 4. FLOATING INPUT BAR
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 85),
+                child: _buildInputBar(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(ChatMessage message) {
+    if (message.isUser) {
+      // User message: Dark navy container right-aligned
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 14, left: 50),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0F172A).withValues(alpha: 0.15),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Text(
+            message.text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w500,
+              height: 1.35,
             ),
           ),
+        ),
+      );
+    }
 
-          const SizedBox(height: 10),
-
-          // Frosted Input Bar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: GlassCard(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              borderRadius: 18,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      onSubmitted: (_) => _sendMessage(),
-                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
-                      decoration: const InputDecoration(
-                        hintText: 'Ask about any document or field...',
-                        hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        filled: false,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-                      ),
-                    ),
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppTheme.primaryColor, AppTheme.accentColor],
-                      ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.4),
-                          blurRadius: 8,
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_upward, color: Colors.white, size: 18),
-                      onPressed: _isLoading ? null : () => _sendMessage(),
-                    ),
+    // AI Assistant message: Frosted white container left-aligned
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14, right: 30),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.95),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white, width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                    blurRadius: 14,
+                    offset: const Offset(0, 3),
                   ),
                 ],
+              ),
+              child: Text(
+                message.text,
+                style: const TextStyle(
+                  color: Color(0xFF1E293B),
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w500,
+                  height: 1.45,
+                ),
+              ),
+            ),
+
+            // Attached Reference Document Card
+            if (message.referenceDocuments.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              ...message.referenceDocuments.map((doc) => _buildReferenceCard(doc)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReferenceCard(DocumentModel doc) {
+    return Container(
+      width: 230,
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Thumbnail Preview Icon / Box
+          Container(
+            width: 32,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Icon(Icons.description_outlined, size: 18, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(width: 10),
+
+          // Title & View Button
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  doc.title,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => DocumentDetailScreen(document: doc),
+                      ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: const Text(
+                      'View',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 4. FLOATING INPUT BAR
+  Widget _buildInputBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.attach_file_rounded, color: Color(0xFF64748B), size: 20),
+            onPressed: () {},
+          ),
+          IconButton(
+            icon: const Icon(Icons.mic_none_rounded, color: Color(0xFF64748B), size: 20),
+            onPressed: () {},
+          ),
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              onSubmitted: (_) => _sendMessage(),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+              decoration: const InputDecoration(
+                hintText: 'Ask anything about your files...',
+                hintStyle: TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 8),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: () => _sendMessage(),
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Text(
+                'Send',
+                style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700),
               ),
             ),
           ),
