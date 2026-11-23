@@ -6,7 +6,6 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/database/database_service.dart';
 import '../../core/services/qa_assistant_service.dart';
 import '../../models/document_model.dart';
-import '../../models/person.dart';
 
 class AssistiveBallDialog extends StatefulWidget {
   const AssistiveBallDialog({super.key});
@@ -61,7 +60,6 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
   Future<void> _loadVaultData() async {
     final db = DatabaseService.instance;
     final docs = await db.getAllDocuments();
-    final persons = await db.getAllPersons();
 
     String? pan;
     String? aadhaar;
@@ -87,7 +85,6 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
     if (mounted) {
       setState(() {
         _documents = docs;
-        _persons = persons;
         _userPan = pan ?? 'ABCDE1234F';
         _userAadhaar = aadhaar ?? '9876 5432 4821';
         _userIfsc = ifsc ?? 'SBIN0001234';
