@@ -31,6 +31,18 @@ class SyncProgress {
   });
 }
 
+class PickFolderResult {
+  final String folderPathOrUri;
+  final String folderDisplayName;
+  final List<File> files;
+
+  PickFolderResult({
+    required this.folderPathOrUri,
+    required this.folderDisplayName,
+    required this.files,
+  });
+}
+
 class FolderSyncService {
   static const String _prefFolderPath = 'vault_folder_path';
   static const _uuid = Uuid();
@@ -91,30 +103,30 @@ class FolderSyncService {
     return vaultDir;
   }
 
-  /// Pick one or multiple files directly (.pdf, .png, .jpg, .jpeg, .docx)
-  /// Guaranteed to work on all modern Android versions (SAF-compliant)
-  static Future<List<File>> pickDocumentFiles() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg', 'docx'],
-    );
-    if (result.isNotEmpty) {
-      return result
-          .where((pf) => pf.path != null)
-          .map((pf) => File(pf.path!))
-          .where((f) => f.existsSync())
-          .toList();
-    }
-    return [];
-  }
-
-  /// Lets the user pick a folder via native directory picker and persists it.
-  static Future<String?> pickFolder() async {
+  /// Native SAF folder picker with instant file discovery
+  static Future<PickFolderResult?> pickFolderAndDiscover() async {
     if (Platform.isAndroid) {
-      final hasPerm = await hasStoragePermission();
-      if (!hasPerm) {
-        await requestStoragePermission();
-      }
+      try {
+        final Map<dynamic, dynamic>? res = await _storageChannel.invokeMethod('pickFolder');
+        if (res != null) {
+          final uri = res['folderUri'] as String? ?? '';
+          final name = res['folderName'] as String? ?? 'Monitored Folder';
+          final List<dynamic> filePaths = res['files'] as List<dynamic>? ?? [];
+          final files = filePaths
+              .map((p) => File(p.toString()))
+              .where((f) => f.existsSync())
+              .toList();
+
+          if (uri.isNotEmpty) {
+            await setSelectedFolderPath(uri);
+          }
+          return PickFolderResult(
+            folderPathOrUri: uri,
+            folderDisplayName: name,
+            files: files,
+          );
+        }
+      } catch (_) {}
     }
 
     try {
@@ -124,7 +136,12 @@ class FolderSyncService {
       if (uri != null) {
         final pathOrUri = uri.scheme == 'file' ? uri.toFilePath() : uri.toString();
         await setSelectedFolderPath(pathOrUri);
-        return pathOrUri;
+        final files = await scanFolderNative(pathOrUri);
+        return PickFolderResult(
+          folderPathOrUri: pathOrUri,
+          folderDisplayName: p.basename(pathOrUri),
+          files: files,
+        );
       }
     } catch (_) {}
 
@@ -134,11 +151,32 @@ class FolderSyncService {
       );
       if (result != null && result.isNotEmpty) {
         await setSelectedFolderPath(result);
-        return result;
+        List<File> files = await scanFolderNative(result);
+        if (files.isEmpty) {
+          final dir = Directory(result);
+          if (await dir.exists()) {
+            files = dir
+                .listSync(recursive: true)
+                .whereType<File>()
+                .where((f) => supportedExtensions.contains(p.extension(f.path).toLowerCase()))
+                .toList();
+          }
+        }
+        return PickFolderResult(
+          folderPathOrUri: result,
+          folderDisplayName: p.basename(result),
+          files: files,
+        );
       }
     } catch (_) {}
 
     return null;
+  }
+
+  /// Lets the user pick a folder via native directory picker and persists it.
+  static Future<String?> pickFolder() async {
+    final res = await pickFolderAndDiscover();
+    return res?.folderPathOrUri;
   }
 
   /// Scans the selected folder and processes un-indexed documents.
@@ -229,18 +267,25 @@ class FolderSyncService {
 
     for (final file in newFiles) {
       final originalName = p.basename(file.path);
+      String cleanName = originalName;
+      if (cleanName.startsWith('vault_staging_') || cleanName.startsWith('vault_import_')) {
+        final parts = cleanName.split('_');
+        if (parts.length >= 3) {
+          cleanName = parts.sublist(2).join('_');
+        }
+      }
       processedCount++;
 
       yield SyncProgress(
         totalFiles: newFiles.length,
         processedFiles: processedCount,
-        currentFileName: originalName,
-        status: 'Analyzing $originalName with Vision AI...',
+        currentFileName: cleanName,
+        status: 'Analyzing $cleanName ($processedCount of ${newFiles.length})...',
       );
 
       try {
         // Copy to permanent app storage to ensure 100% offline persistence
-        final safeBaseName = originalName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+        final safeBaseName = cleanName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
         final permanentFilePath = p.join(vaultDir.path, '${DateTime.now().millisecondsSinceEpoch}_$safeBaseName');
         final permanentFile = await file.copy(permanentFilePath);
 
@@ -284,7 +329,7 @@ class FolderSyncService {
           issueDate: issueDate,
           expiryDate: expiryDate,
           filePath: permanentFile.path,
-          fileName: originalName,
+          fileName: cleanName,
           fileType: ext,
           rawText: extractResult.rawResponse,
           isVerified: extractResult.isChecksumValid,

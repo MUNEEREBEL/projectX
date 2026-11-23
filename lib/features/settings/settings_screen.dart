@@ -4,10 +4,8 @@ import '../../core/config/app_config.dart';
 import '../../core/database/database_service.dart';
 import '../../core/services/alert_service.dart';
 import '../../core/services/folder_sync_service.dart';
-import '../../core/services/overlay_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/glass_card.dart';
-import '../overlay/assistive_ball_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -23,8 +21,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isSavedKey = false;
   bool _obscureKey = true;
   bool _hasActiveKey = false;
-  bool _canDrawOverlays = false;
-  bool _isOverlayServiceRunning = false;
 
   @override
   void initState() {
@@ -37,7 +33,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final folder = await FolderSyncService.getSelectedFolderPath();
     final prefs = await SharedPreferences.getInstance();
     final ownerName = prefs.getString('vault_owner_name') ?? 'Primary Cardholder';
-    final overlayPermitted = await OverlayService.canDrawOverlays();
 
     if (mounted) {
       setState(() {
@@ -45,7 +40,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _hasActiveKey = key != null && key.isNotEmpty;
         _folderPath = folder;
         _ownerNameController.text = ownerName;
-        _canDrawOverlays = overlayPermitted;
       });
     }
   }
@@ -68,24 +62,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Primary cardholder name updated.')),
       );
-    }
-  }
-
-  Future<void> _toggleOverlayService(bool enable) async {
-    if (enable) {
-      final permitted = await OverlayService.canDrawOverlays();
-      if (!permitted) {
-        await OverlayService.requestOverlayPermission();
-        return;
-      }
-      final started = await OverlayService.startAssistiveBall();
-      setState(() {
-        _isOverlayServiceRunning = started;
-        _canDrawOverlays = permitted;
-      });
-    } else {
-      await OverlayService.stopAssistiveBall();
-      setState(() => _isOverlayServiceRunning = false);
     }
   }
 
@@ -158,38 +134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // 3. Assistive Form Copilot & Overlay
-          _buildSectionHeader('ASSISTIVE FORM COPILOT (CHROME OVERLAY)'),
-          _buildSettingsCard([
-            SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              secondary: const Icon(Icons.bolt, color: AppTheme.primaryColor),
-              title: const Text('Floating Ball Over Chrome', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-              subtitle: Text(
-                _canDrawOverlays
-                    ? 'Floating ball active over external apps (Chrome, SBI, IRCTC).'
-                    : 'Requires permission to float over other apps like Chrome.',
-                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-              ),
-              value: _isOverlayServiceRunning,
-              onChanged: _toggleOverlayService,
-            ),
-            const Divider(color: AppTheme.darkBorder, height: 1),
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-              leading: const Icon(Icons.touch_app_outlined, color: AppTheme.accentColor),
-              title: const Text('Test Copilot Dialog Now', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Preview quick-copy values and file upload chips in-app.', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-              trailing: OutlinedButton(
-                onPressed: () => AssistiveBallDialog.show(context),
-                child: const Text('Preview', style: TextStyle(fontSize: 11)),
-              ),
-            ),
-          ]),
-
-          const SizedBox(height: 20),
-
-          // 4. Documents & Monitored Folder
+          // 3. Documents & Monitored Folder
           _buildSectionHeader('STORAGE & MONITORED DOCUMENTS'),
           _buildSettingsCard([
             ListTile(
@@ -213,39 +158,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-              trailing: OutlinedButton(
+              trailing: ElevatedButton(
                 onPressed: () async {
-                  final picked = await FolderSyncService.pickFolder();
-                  if (picked != null) {
-                    setState(() => _folderPath = picked);
+                  final res = await FolderSyncService.pickFolderAndDiscover();
+                  if (res != null) {
+                    setState(() => _folderPath = res.folderPathOrUri);
+                    if (res.files.isNotEmpty && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Auto-indexing ${res.files.length} document(s)...')),
+                      );
+                      FolderSyncService.syncFiles(res.files).listen((p) {
+                        if (p.isCompleted && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(p.status)),
+                          );
+                        }
+                      });
+                    }
                   }
                 },
                 child: const Text('Change', style: TextStyle(fontSize: 11)),
-              ),
-            ),
-            const Divider(color: AppTheme.darkBorder, height: 1),
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              leading: const Icon(Icons.add_circle_outline, color: AppTheme.primaryColor),
-              title: const Text('Import Files Directly', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Select individual identity files (.pdf, .jpg, etc.) directly into vault.', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-              trailing: ElevatedButton(
-                onPressed: () async {
-                  final files = await FolderSyncService.pickDocumentFiles();
-                  if (files.isNotEmpty && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Importing ${files.length} file(s)...')),
-                    );
-                    FolderSyncService.syncFiles(files).listen((p) {
-                      if (p.isCompleted && context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(p.status)),
-                        );
-                      }
-                    });
-                  }
-                },
-                child: const Text('Import', style: TextStyle(fontSize: 11)),
               ),
             ),
           ]),

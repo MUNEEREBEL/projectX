@@ -1,5 +1,6 @@
 package com.example.x
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -15,60 +16,12 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 class MainActivity : FlutterActivity() {
-    private val OVERLAY_CHANNEL = "com.example.x/assistive_overlay"
     private val STORAGE_CHANNEL = "com.example.x/storage_channel"
-    private var overlayChannel: MethodChannel? = null
+    private val REQ_PICK_FOLDER = 9921
+    private var pendingFolderResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-
-        overlayChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OVERLAY_CHANNEL)
-        overlayChannel?.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "canDrawOverlays" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        result.success(Settings.canDrawOverlays(this))
-                    } else {
-                        result.success(true)
-                    }
-                }
-                "requestOverlayPermission" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        val intent = Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:$packageName")
-                        )
-                        startActivity(intent)
-                        result.success(true)
-                    } else {
-                        result.success(true)
-                    }
-                }
-                "startAssistiveBall" -> {
-                    try {
-                        val intent = Intent(this, AssistiveBallService::class.java)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(intent)
-                        } else {
-                            startService(intent)
-                        }
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("SERVICE_START_FAILED", e.message, null)
-                    }
-                }
-                "stopAssistiveBall" -> {
-                    try {
-                        val intent = Intent(this, AssistiveBallService::class.java)
-                        stopService(intent)
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("SERVICE_STOP_FAILED", e.message, null)
-                    }
-                }
-                else -> result.notImplemented()
-            }
-        }
 
         // Native Storage & Folder Discovery Channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, STORAGE_CHANNEL).setMethodCallHandler { call, result ->
@@ -99,58 +52,27 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                 }
+                "pickFolder" -> {
+                    pendingFolderResult = result
+                    try {
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                            addFlags(
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                            )
+                        }
+                        startActivityForResult(intent, REQ_PICK_FOLDER)
+                    } catch (e: Exception) {
+                        pendingFolderResult = null
+                        result.error("PICK_FOLDER_ERROR", e.message, null)
+                    }
+                }
                 "scanFolderNative" -> {
                     val pathOrUri = call.argument<String>("target") ?: ""
                     CoroutineScope(Dispatchers.IO).launch {
                         try {
-                            val matchingPaths = mutableListOf<String>()
-                            val supportedExts = setOf("pdf", "png", "jpg", "jpeg", "docx")
-
-                            if (pathOrUri.startsWith("content://")) {
-                                val treeUri = Uri.parse(pathOrUri)
-                                try {
-                                    val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                    applicationContext.contentResolver.takePersistableUriPermission(treeUri, flags)
-                                } catch (_: Exception) {}
-
-                                val docFile = DocumentFile.fromTreeUri(applicationContext, treeUri)
-                                if (docFile != null && docFile.isDirectory) {
-                                    fun scanRecursive(dir: DocumentFile, depth: Int) {
-                                        if (depth > 3) return
-                                        for (child in dir.listFiles()) {
-                                            if (child.isDirectory) {
-                                                scanRecursive(child, depth + 1)
-                                            } else if (child.isFile) {
-                                                val name = child.name ?: continue
-                                                val ext = name.substringAfterLast('.', "").lowercase()
-                                                if (ext in supportedExts) {
-                                                    val cachedFile = File(applicationContext.cacheDir, "vault_import_${System.currentTimeMillis()}_$name")
-                                                    applicationContext.contentResolver.openInputStream(child.uri)?.use { input ->
-                                                        cachedFile.outputStream().use { output ->
-                                                            input.copyTo(output)
-                                                        }
-                                                    }
-                                                    matchingPaths.add(cachedFile.absolutePath)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    scanRecursive(docFile, 0)
-                                }
-                            } else {
-                                val dir = File(pathOrUri)
-                                if (dir.exists() && dir.isDirectory) {
-                                    dir.walkTopDown().maxDepth(3).forEach { file ->
-                                        if (file.isFile) {
-                                            val ext = file.extension.lowercase()
-                                            if (ext in supportedExts) {
-                                                matchingPaths.add(file.absolutePath)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
+                            val matchingPaths = scanFilesFromTarget(pathOrUri)
                             runOnUiThread { result.success(matchingPaths) }
                         } catch (e: Exception) {
                             runOnUiThread { result.error("SCAN_FAILED", e.message, null) }
@@ -160,20 +82,123 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
-
-        // Handle case where activity opened from AssistiveBall tap
-        checkIntentForCopilot(intent)
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        checkIntentForCopilot(intent)
-    }
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PICK_FOLDER) {
+            val result = pendingFolderResult
+            pendingFolderResult = null
+            if (result == null) return
 
-    private fun checkIntentForCopilot(intent: Intent?) {
-        if (intent?.getBooleanExtra("OPEN_COPILOT", false) == true) {
-            overlayChannel?.invokeMethod("onOpenCopilotRequested", null)
+            if (resultCode == Activity.RESULT_OK && data?.data != null) {
+                val treeUri = data.data!!
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        try {
+                            applicationContext.contentResolver.takePersistableUriPermission(treeUri, takeFlags)
+                        } catch (_: Exception) {}
+
+                        val docFile = DocumentFile.fromTreeUri(applicationContext, treeUri)
+                        val folderName = docFile?.name ?: "Monitored Folder"
+                        val matchingPaths = scanFilesFromTarget(treeUri.toString())
+
+                        val resultMap = mapOf(
+                            "folderUri" to treeUri.toString(),
+                            "folderName" to folderName,
+                            "files" to matchingPaths
+                        )
+                        runOnUiThread { result.success(resultMap) }
+                    } catch (e: Exception) {
+                        runOnUiThread { result.error("SCAN_ERROR", e.message, null) }
+                    }
+                }
+            } else {
+                result.success(null)
+            }
         }
+    }
+
+    private fun scanFilesFromTarget(pathOrUri: String): List<String> {
+        val matchingPaths = mutableListOf<String>()
+        val supportedExts = setOf("pdf", "png", "jpg", "jpeg", "docx")
+
+        if (pathOrUri.startsWith("content://")) {
+            val treeUri = Uri.parse(pathOrUri)
+            try {
+                applicationContext.contentResolver.takePersistableUriPermission(
+                    treeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
+
+            val docFile = DocumentFile.fromTreeUri(applicationContext, treeUri)
+            if (docFile != null && docFile.isDirectory) {
+                fun scanRecursive(dir: DocumentFile, depth: Int) {
+                    if (depth > 3) return
+                    val children = dir.listFiles()
+                    for (child in children) {
+                        if (child.isDirectory) {
+                            scanRecursive(child, depth + 1)
+                        } else if (child.isFile) {
+                            val name = child.name ?: continue
+                            val ext = name.substringAfterLast('.', "").lowercase()
+                            if (ext in supportedExts) {
+                                val cachedFile = File(applicationContext.cacheDir, "vault_staging_${System.currentTimeMillis()}_$name")
+                                applicationContext.contentResolver.openInputStream(child.uri)?.use { input ->
+                                    cachedFile.outputStream().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                matchingPaths.add(cachedFile.absolutePath)
+                            }
+                        }
+                    }
+                }
+                scanRecursive(docFile, 0)
+            }
+        } else {
+            val dir = File(pathOrUri)
+            if (dir.exists() && dir.isDirectory) {
+                dir.walkTopDown().maxDepth(3).forEach { file ->
+                    if (file.isFile) {
+                        val ext = file.extension.lowercase()
+                        if (ext in supportedExts) {
+                            matchingPaths.add(file.absolutePath)
+                        }
+                    }
+                }
+            }
+
+            // Fallback for Scoped Storage: try resolving as primary external storage DocumentFile
+            if (matchingPaths.isEmpty()) {
+                val rel = pathOrUri.replace("/storage/emulated/0/", "").replace("/storage/emulated/0", "").trim('/')
+                if (rel.isNotEmpty()) {
+                    val encoded = Uri.encode(rel)
+                    val synthUri = Uri.parse("content://com.android.externalstorage.documents/tree/primary%3A$encoded")
+                    val docFile = DocumentFile.fromTreeUri(applicationContext, synthUri)
+                    if (docFile != null && docFile.isDirectory) {
+                        for (child in docFile.listFiles()) {
+                            if (child.isFile) {
+                                val name = child.name ?: continue
+                                val ext = name.substringAfterLast('.', "").lowercase()
+                                if (ext in supportedExts) {
+                                    val cachedFile = File(applicationContext.cacheDir, "vault_staging_${System.currentTimeMillis()}_$name")
+                                    applicationContext.contentResolver.openInputStream(child.uri)?.use { input ->
+                                        cachedFile.outputStream().use { output ->
+                                            input.copyTo(output)
+                                        }
+                                    }
+                                    matchingPaths.add(cachedFile.absolutePath)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return matchingPaths
     }
 }

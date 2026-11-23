@@ -6,7 +6,6 @@ import '../../core/services/folder_sync_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/glass_card.dart';
 import '../alerts/expiry_radar_widget.dart';
-import '../overlay/assistive_ball_dialog.dart';
 import '../vault/document_detail_screen.dart';
 import '../vault/vault_screen.dart';
 
@@ -126,38 +125,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
           ],
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: InkWell(
-              onTap: () => AssistiveBallDialog.show(context),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppTheme.primaryColor.withValues(alpha: 0.25),
-                      AppTheme.accentColor.withValues(alpha: 0.15),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.accentColor.withValues(alpha: 0.4)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.bolt, size: 14, color: AppTheme.accentColor),
-                    SizedBox(width: 4),
-                    Text(
-                      'Copilot',
-                      style: TextStyle(color: AppTheme.accentColor, fontWeight: FontWeight.w700, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
@@ -251,10 +218,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           onPressed: _isSyncing
                               ? null
                               : () async {
-                                  final files = await FolderSyncService.pickDocumentFiles();
-                                  if (files.isNotEmpty) {
+                                  final res = await FolderSyncService.pickFolderAndDiscover();
+                                  if (res != null && res.files.isNotEmpty) {
+                                    ref.invalidate(selectedFolderProvider);
                                     setState(() => _isSyncing = true);
-                                    FolderSyncService.syncFiles(files).listen((p) {
+                                    FolderSyncService.syncFiles(res.files).listen((p) {
                                       ref.read(syncProgressProvider.notifier).setProgress(p);
                                       if (p.isCompleted) {
                                         setState(() => _isSyncing = false);
@@ -270,8 +238,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                     });
                                   }
                                 },
-                          icon: const Icon(Icons.add, size: 14),
-                          label: const Text('Add Files', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          icon: const Icon(Icons.folder_open, size: 14),
+                          label: const Text('Change Folder', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                         ),
                       ),
                     ],
