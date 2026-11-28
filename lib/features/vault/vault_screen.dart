@@ -1,11 +1,15 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/database/database_service.dart';
 import '../../core/providers/vault_provider.dart';
+import '../../models/document_field.dart';
 import '../../models/document_model.dart';
 import '../../models/person.dart';
 import 'document_detail_screen.dart';
+import 'family_graph_dialog.dart';
 
 class VaultScreen extends ConsumerStatefulWidget {
   const VaultScreen({super.key});
@@ -15,17 +19,8 @@ class VaultScreen extends ConsumerStatefulWidget {
 }
 
 class _VaultScreenState extends ConsumerState<VaultScreen> {
-  String _selectedCategory = 'All';
   final TextEditingController _searchController = TextEditingController();
-  String _ownerName = 'Muneer';
-
-  final List<String> _categories = [
-    'All',
-    'Identity',
-    'Education',
-    'Financial',
-    'Vehicle',
-  ];
+  String _ownerName = 'Owner';
 
   @override
   void initState() {
@@ -37,9 +32,8 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
     final prefs = await SharedPreferences.getInstance();
     final name = prefs.getString('vault_owner_name');
     if (name != null && name.trim().isNotEmpty && name.trim() != 'Primary Cardholder') {
-      final firstName = name.trim().split(' ').first;
       if (mounted) {
-        setState(() => _ownerName = firstName);
+        setState(() => _ownerName = name.trim());
       }
     }
   }
@@ -54,35 +48,20 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
   Widget build(BuildContext context) {
     final docsAsync = ref.watch(documentsProvider);
     final personsAsync = ref.watch(personsProvider);
-    final selectedPersonId = ref.watch(selectedPersonIdProvider);
 
     final rawDocs = docsAsync.value ?? [];
     final persons = personsAsync.value ?? [];
 
     // Filter by Search Query
     final query = _searchController.text.trim().toLowerCase();
-    var filteredDocs = rawDocs.where((doc) {
+    final displayDocs = rawDocs.where((doc) {
       if (query.isEmpty) return true;
       final titleMatch = doc.title.toLowerCase().contains(query);
       final idMatch = doc.idNumber != null && doc.idNumber!.toLowerCase().contains(query);
       final typeMatch = doc.docType.toLowerCase().contains(query);
-      return titleMatch || idMatch || typeMatch;
+      final fileMatch = doc.fileName.toLowerCase().contains(query);
+      return titleMatch || idMatch || typeMatch || fileMatch;
     }).toList();
-
-    // Filter by Person
-    if (selectedPersonId != null) {
-      filteredDocs = filteredDocs.where((d) => d.personId == selectedPersonId).toList();
-    }
-
-    // Filter by Category
-    if (_selectedCategory != 'All') {
-      filteredDocs = filteredDocs.where((d) {
-        return d.category.toLowerCase() == _selectedCategory.toLowerCase();
-      }).toList();
-    }
-
-    // Fallback Mock Documents if vault is still fresh
-    final displayDocs = filteredDocs.isNotEmpty ? filteredDocs : _createMockVaultDocs(persons);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -105,34 +84,69 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. TOP HEADER
+              // 1. TOP HEADER (CONSTRAINED TO AVOID OVERFLOW)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Documents Vault',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
-                        letterSpacing: -0.5,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Documents Vault',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          Text(
+                            '${displayDocs.length} verified item${displayDocs.length == 1 ? '' : 's'} stored offline',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: const Text(
-                        'Vault Encrypted',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF475569),
+                    const SizedBox(width: 12),
+                    // Family Knowledge Graph Button
+                    InkWell(
+                      onTap: () => FamilyGraphDialog.show(context),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF2563EB).withValues(alpha: 0.06),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.hub_rounded, size: 13, color: Color(0xFF2563EB)),
+                            SizedBox(width: 4),
+                            Text(
+                              'Family Graph',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF2563EB),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -140,18 +154,17 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
                 ),
               ),
 
-              // 2. SEARCH BAR
+              // 2. SEARCH BAR (BORDERLESS, NO GAP)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.9),
+                    color: Colors.white.withValues(alpha: 0.95),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.04),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -166,7 +179,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
                       color: Color(0xFF0F172A),
                     ),
                     decoration: InputDecoration(
-                      hintText: 'Search Aadhaar, PAN, Roll No, IFSC...',
+                      hintText: 'Search Aadhaar, PAN, Roll No, IFSC, name...',
                       hintStyle: const TextStyle(
                         color: Color(0xFF94A3B8),
                         fontSize: 12.5,
@@ -179,7 +192,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
                       ),
                       prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                       border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 11),
                       suffixIcon: _searchController.text.isNotEmpty
                           ? IconButton(
                               icon: const Icon(Icons.clear, size: 16, color: Color(0xFF94A3B8)),
@@ -193,17 +206,9 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
 
-              // 3. FAMILY MEMBERS FILTER CHIPS
-              _buildFamilyFilterPills(persons, selectedPersonId),
-              const SizedBox(height: 6),
-
-              // 4. CATEGORY TEXT TABS
-              _buildCategoryTabs(),
-              const SizedBox(height: 10),
-
-              // 5. 2-COLUMN DOCUMENT CARDS GRID
+              // 3. DOCUMENT CARDS LIST (WITH EXTRACTED FIELDS & PURE GLASS DESIGN)
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () async {
@@ -211,25 +216,77 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
                     ref.invalidate(personsProvider);
                   },
                   color: const Color(0xFF00B4D8),
-                  child: GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 90),
-                    physics: const BouncingScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.88,
-                    ),
-                    itemCount: displayDocs.length,
-                    itemBuilder: (context, index) {
-                      final doc = displayDocs[index];
-                      final person = persons.firstWhere(
-                        (p) => p.id == doc.personId,
-                        orElse: () => Person(id: 'self', name: _ownerName, relationship: 'Self'),
-                      );
-                      return _buildVaultDocumentCard(doc, person);
-                    },
-                  ),
+                  child: displayDocs.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                          children: [
+                            const SizedBox(height: 80),
+                            Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.8),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: const Icon(
+                                      Icons.folder_open_rounded,
+                                      size: 32,
+                                      color: Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    query.isNotEmpty
+                                        ? 'No matches for "$query"'
+                                        : 'No documents in vault',
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    query.isNotEmpty
+                                        ? 'Try searching with a different keyword.'
+                                        : 'Sync a monitored folder or add documents to populate.',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(20, 2, 20, 80),
+                          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                          itemCount: displayDocs.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final doc = displayDocs[index];
+                            final person = persons.firstWhere(
+                              (p) => p.id == doc.personId,
+                              orElse: () => Person(id: 'self', name: _ownerName, relationship: 'Self'),
+                            );
+                            return _VaultDocumentCardWidget(
+                              key: ValueKey(doc.id),
+                              document: doc,
+                              person: person,
+                              defaultOwner: _ownerName,
+                              onDocumentUpdated: () {
+                                ref.invalidate(documentsProvider);
+                              },
+                            );
+                          },
+                        ),
                 ),
               ),
             ],
@@ -238,184 +295,95 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
       ),
     );
   }
+}
 
-  // 3. FAMILY FILTER PILLS
-  Widget _buildFamilyFilterPills(List<Person> persons, String? selectedPersonId) {
-    final selfPerson = persons.isNotEmpty
-        ? persons.first
-        : Person(id: 'self', name: _ownerName, relationship: 'Self');
+/// Standalone Glassmorphic Document Card with Extracted Fields Preview
+class _VaultDocumentCardWidget extends StatefulWidget {
+  final DocumentModel document;
+  final Person person;
+  final String defaultOwner;
+  final VoidCallback onDocumentUpdated;
 
-    final otherPersons = persons.skip(1).toList();
+  const _VaultDocumentCardWidget({
+    super.key,
+    required this.document,
+    required this.person,
+    required this.defaultOwner,
+    required this.onDocumentUpdated,
+  });
 
-    return SizedBox(
-      height: 36,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        children: [
-          // All Chip
-          _buildPillButton(
-            label: 'All',
-            isSelected: selectedPersonId == null,
-            onTap: () => ref.read(selectedPersonIdProvider.notifier).state = null,
-          ),
-          const SizedBox(width: 8),
+  @override
+  State<_VaultDocumentCardWidget> createState() => _VaultDocumentCardWidgetState();
+}
 
-          // Self (Muneer) Chip
-          _buildPillButton(
-            label: 'Self (${selfPerson.name.split(' ').first})',
-            hasCheck: selectedPersonId == selfPerson.id,
-            isSelected: selectedPersonId == selfPerson.id,
-            onTap: () {
-              final isSel = selectedPersonId == selfPerson.id;
-              ref.read(selectedPersonIdProvider.notifier).state = isSel ? null : selfPerson.id;
-            },
-          ),
-          const SizedBox(width: 8),
+class _VaultDocumentCardWidgetState extends State<_VaultDocumentCardWidget> {
+  List<DocumentField> _fields = [];
 
-          // Other Family Members (Father, Mother, etc.)
-          ...otherPersons.map((p) {
-            final isSel = selectedPersonId == p.id;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _buildPillButton(
-                label: p.relationship.isNotEmpty ? p.relationship : p.name,
-                isSelected: isSel,
-                onTap: () {
-                  ref.read(selectedPersonIdProvider.notifier).state = isSel ? null : p.id;
-                },
-              ),
-            );
-          }),
-
-          if (otherPersons.isEmpty) ...[
-            _buildPillButton(
-              label: 'Father',
-              isSelected: false,
-              onTap: () {},
-            ),
-            const SizedBox(width: 8),
-            _buildPillButton(
-              label: 'Mother',
-              isSelected: false,
-              onTap: () {},
-            ),
-          ],
-        ],
-      ),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _loadFields();
   }
 
-  Widget _buildPillButton({
-    required String label,
-    required bool isSelected,
-    bool hasCheck = false,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF0F172A) : Colors.white.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF0F172A) : const Color(0xFFE2E8F0),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0F172A).withValues(alpha: isSelected ? 0.15 : 0.02),
-              blurRadius: 6,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                color: isSelected ? Colors.white : const Color(0xFF475569),
-              ),
-            ),
-            if (hasCheck) ...[
-              const SizedBox(width: 4),
-              Icon(
-                Icons.check,
-                size: 13,
-                color: isSelected ? Colors.white : const Color(0xFF0F172A),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 4. CATEGORY TABS
-  Widget _buildCategoryTabs() {
-    return SizedBox(
-      height: 32,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        itemCount: _categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 20),
-        itemBuilder: (context, index) {
-          final cat = _categories[index];
-          final isSelected = _selectedCategory == cat;
-
-          return InkWell(
-            onTap: () => setState(() => _selectedCategory = cat),
-            child: Center(
-              child: Text(
-                cat,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                  color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  // 5. DOCUMENT CARD
-  Widget _buildVaultDocumentCard(DocumentModel doc, Person person) {
-    // Icon selection matching reference image
-    IconData iconData = Icons.badge_outlined;
-    final typeLower = doc.docType.toLowerCase();
-    final titleLower = doc.title.toLowerCase();
-
-    if (typeLower.contains('marksheet') || titleLower.contains('marksheet') || typeLower.contains('education')) {
-      iconData = Icons.school_outlined;
-    } else if (typeLower.contains('passbook') || titleLower.contains('passbook') || typeLower.contains('bank')) {
-      iconData = Icons.account_balance_outlined;
-    } else if (typeLower.contains('insurance') || titleLower.contains('insurance') || typeLower.contains('vehicle') || titleLower.contains('rc')) {
-      iconData = Icons.directions_car_outlined;
+  Future<void> _loadFields() async {
+    final fields = await DatabaseService.instance.getFieldsForDocument(widget.document.id);
+    if (mounted) {
+      setState(() {
+        _fields = fields;
+      });
     }
+  }
 
-    // Number extraction for "•••• 4821"
-    String idMask = '•••• 4821';
-    if (doc.idNumber != null && doc.idNumber!.isNotEmpty) {
-      final clean = doc.idNumber!.replaceAll(' ', '');
-      if (clean.length >= 4) {
-        idMask = '•••• ${clean.substring(clean.length - 4)}';
-      } else {
-        idMask = '•••• $clean';
+  void _copyToClipboard(String label, String value) {
+    Clipboard.setData(ClipboardData(text: value));
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Copied $label: $value'),
+        duration: const Duration(seconds: 1),
+        backgroundColor: const Color(0xFF0F172A),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final doc = widget.document;
+
+    // Resolve real holder name from document's fields
+    String holderName = widget.person.name;
+    for (final f in _fields) {
+      final low = f.fieldName.toLowerCase().trim();
+      if ((low == 'full name' ||
+              low == 'name' ||
+              low == 'holder name' ||
+              low == 'cardholder name' ||
+              low == 'student name' ||
+              low == 'candidate name' ||
+              low == 'policy holder' ||
+              low == 'insured name' ||
+              low == 'patient name') &&
+          f.fieldValue.trim().isNotEmpty &&
+          f.fieldValue.toLowerCase() != 'unknown' &&
+          f.fieldValue.toLowerCase() != 'primary user' &&
+          f.fieldValue.toLowerCase() != 'primary cardholder') {
+        holderName = f.fieldValue.trim();
+        break;
       }
     }
+    if (holderName.isEmpty ||
+        holderName.toLowerCase() == 'primary user' ||
+        holderName.toLowerCase() == 'unknown') {
+      holderName = widget.person.relationship == 'Self' ? widget.defaultOwner : 'Verified Document';
+    }
 
-    // Status pill text and color matching reference image
+    // Clean high-contrast document emblem
+    final isPdf = doc.fileName.toLowerCase().endsWith('.pdf');
+    final iconData = isPdf ? Icons.picture_as_pdf_outlined : Icons.description_outlined;
+    const iconBg = Color(0xFFEFF6FF);
+    const iconColor = Color(0xFF2563EB);
+
+    // Expiry / Status evaluation
     String statusText = 'Lifetime Valid';
     Color statusBg = const Color(0xFFDCFCE7);
     Color statusFg = const Color(0xFF16A34A);
@@ -423,25 +391,36 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
     if (doc.expiryDate != null) {
       final days = doc.expiryDate!.difference(DateTime.now()).inDays;
       if (days < 0) {
-        statusText = 'Expired';
+        statusText = 'EXPIRED';
         statusBg = const Color(0xFFFEE2E2);
         statusFg = const Color(0xFFDC2626);
       } else if (days <= 30) {
-        statusText = 'Expiring in ${days}d';
+        statusText = 'Expires in ${days}d';
         statusBg = const Color(0xFFFEF3C7);
         statusFg = const Color(0xFFD97706);
       } else {
-        statusText = 'Valid';
+        statusText = 'Valid until ${doc.expiryDate!.year}';
         statusBg = const Color(0xFFDCFCE7);
         statusFg = const Color(0xFF16A34A);
       }
-    } else if (typeLower.contains('passbook') || titleLower.contains('passbook')) {
-      statusText = 'Updated recently';
-      statusBg = const Color(0xFFF1F5F9);
-      statusFg = const Color(0xFF475569);
     }
 
-    final ownerDisplay = person.relationship.isNotEmpty ? person.relationship : person.name;
+    // Collect highlight extracted fields to display directly on the card
+    final highlightFields = <({String label, String value, IconData icon})>[];
+    for (final f in _fields) {
+      final nameLow = f.fieldName.toLowerCase();
+      if (nameLow.contains('mobile') || nameLow.contains('phone')) {
+        highlightFields.add((label: 'Mobile', value: f.fieldValue, icon: Icons.phone_outlined));
+      } else if (nameLow.contains('ifsc')) {
+        highlightFields.add((label: 'IFSC', value: f.fieldValue, icon: Icons.account_balance_outlined));
+      } else if (nameLow.contains('account number')) {
+        highlightFields.add((label: 'A/C', value: f.fieldValue, icon: Icons.credit_card_outlined));
+      } else if (nameLow.contains('date of birth') || nameLow == 'dob') {
+        highlightFields.add((label: 'DOB', value: f.fieldValue, icon: Icons.cake_outlined));
+      } else if (nameLow.contains('sgpa') || nameLow.contains('cgpa') || nameLow.contains('percentage')) {
+        highlightFields.add((label: f.fieldName, value: f.fieldValue, icon: Icons.grade_outlined));
+      }
+    }
 
     return InkWell(
       onTap: () {
@@ -451,196 +430,276 @@ class _VaultScreenState extends ConsumerState<VaultScreen> {
             builder: (_) => DocumentDetailScreen(document: doc),
           ),
         ).then((_) {
-          ref.invalidate(documentsProvider);
+          _loadFields();
+          widget.onDocumentUpdated();
         });
       },
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0F172A).withValues(alpha: 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // Top: Icon in rounded container
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(20),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.88),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.95),
+                width: 1.3,
               ),
-              child: Icon(
-                iconData,
-                size: 18,
-                color: const Color(0xFF0F172A),
-              ),
-            ),
-
-            // Middle: Title & Owner Pill
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  doc.title,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
-                    height: 1.25,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    ownerDisplay,
-                    style: const TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF3B82F6),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                  blurRadius: 14,
+                  offset: const Offset(0, 3),
                 ),
               ],
             ),
-
-            // Bottom: Masked ID + Status Pill
-            Column(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
+                // 1. TOP ROW: ICON, TITLE, AND EXPIRY BADGE
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      idMask,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF334155),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: iconBg,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(iconData, color: iconColor, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            doc.title,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F172A),
+                              height: 1.25,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 3),
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.person_outline, size: 11, color: Color(0xFF2563EB)),
+                                    const SizedBox(width: 3),
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(maxWidth: 140),
+                                      child: Text(
+                                        holderName,
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF2563EB),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    InkWell(
-                      onTap: () {
-                        if (doc.idNumber != null) {
-                          Clipboard.setData(ClipboardData(text: doc.idNumber!));
-                          HapticFeedback.lightImpact();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('ID copied to clipboard'),
-                              duration: Duration(seconds: 1),
-                            ),
-                          );
-                        }
-                      },
-                      child: const Icon(
-                        Icons.copy_rounded,
-                        size: 13,
-                        color: Color(0xFF94A3B8),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: statusBg,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        statusText,
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: statusFg,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 5),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                  decoration: BoxDecoration(
-                    color: statusBg,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    statusText,
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w700,
-                      color: statusFg,
+
+                // 2. PRIMARY ID NUMBER CHIP (IF PRESENT)
+                if (doc.idNumber != null && doc.idNumber!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.pin_outlined, size: 14, color: Color(0xFF64748B)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            doc.idNumber!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1E293B),
+                              letterSpacing: 0.3,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => _copyToClipboard('ID Number', doc.idNumber!),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.copy_rounded, size: 11, color: Color(0xFF334155)),
+                                SizedBox(width: 3),
+                                Text(
+                                  'Copy',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF334155),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+                ],
+
+                // 3. EXTRACTED DATA HIGHLIGHTS CHIPS (PREVIEW ON CARD)
+                if (highlightFields.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: highlightFields.take(3).map((item) {
+                      return InkWell(
+                        onTap: () => _copyToClipboard(item.label, item.value),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(item.icon, size: 11, color: const Color(0xFF64748B)),
+                              const SizedBox(width: 4),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 160),
+                                child: Text(
+                                  '${item.label}: ${item.value}',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF334155),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 3),
+                              const Icon(Icons.copy, size: 9, color: Color(0xFF94A3B8)),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+
+                // 4. FOOTER: VERIFIED BADGE & TAP TO VIEW
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            doc.isVerified ? Icons.check_circle_rounded : Icons.pending_outlined,
+                            size: 13,
+                            color: doc.isVerified ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              doc.isVerified ? 'Verified Extraction' : 'Draft / Processing',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: doc.isVerified ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Text(
+                          'View all fields',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF38BDF8),
+                          ),
+                        ),
+                        SizedBox(width: 2),
+                        Icon(Icons.chevron_right_rounded, size: 14, color: Color(0xFF38BDF8)),
+                      ],
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
-  }
-
-  List<DocumentModel> _createMockVaultDocs(List<Person> persons) {
-    return [
-      DocumentModel(
-        id: 'mock-1',
-        personId: persons.length > 1 ? persons[1].id : 'father',
-        docType: 'AADHAAR',
-        category: 'Identity',
-        title: 'Father\'s Aadhaar Card',
-        idNumber: '9876 5432 4821',
-        filePath: '',
-        fileName: 'aadhaar_father.pdf',
-        fileType: 'pdf',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      DocumentModel(
-        id: 'mock-2',
-        personId: persons.isNotEmpty ? persons[0].id : 'self',
-        docType: 'CLASS_10_MARKSHEET',
-        category: 'Education',
-        title: 'Class 10th Marksheet',
-        idNumber: '2100849871',
-        filePath: '',
-        fileName: 'marksheet_10.pdf',
-        fileType: 'pdf',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      DocumentModel(
-        id: 'mock-3',
-        personId: persons.isNotEmpty ? persons[0].id : 'self',
-        docType: 'BANK_PASSBOOK',
-        category: 'Financial',
-        title: 'Bank Passbook',
-        idNumber: '345678913456',
-        filePath: '',
-        fileName: 'passbook.pdf',
-        fileType: 'pdf',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      DocumentModel(
-        id: 'mock-4',
-        personId: persons.length > 1 ? persons[1].id : 'father',
-        docType: 'VEHICLE_INSURANCE',
-        category: 'Vehicle',
-        title: 'Car Insurance',
-        idNumber: 'POL20262289',
-        expiryDate: DateTime.now().add(const Duration(days: 18)),
-        filePath: '',
-        fileName: 'insurance.pdf',
-        fileType: 'pdf',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-    ];
   }
 }

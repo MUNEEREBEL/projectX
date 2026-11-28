@@ -29,14 +29,20 @@ class RouteKeyboardDismissObserver extends NavigatorObserver {
   }
 }
 
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Safely attempt to load .env if available
+  // Safely attempt to load .env if available, fallback to .env.example
   try {
     await dotenv.load(fileName: ".env");
   } catch (_) {
-    // If .env is missing or cannot be parsed, fallback mechanisms in AppConfig handle it
+    try {
+      await dotenv.load(fileName: ".env.example");
+    } catch (_) {
+      // Handled cleanly by AppConfig fallbacks
+    }
   }
 
   // Initialize background local notification engine for expiry alerts
@@ -60,6 +66,7 @@ class ProjectXApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       title: 'Project X',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,

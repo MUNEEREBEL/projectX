@@ -22,7 +22,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
   List<File> _discoveredFiles = [];
   bool _isScanning = false;
   String _scanStatus = '';
-  double _progressValue = 0.35; // Default aesthetic preview value matching reference
+  double _progressValue = 0.0;
   bool _scanComplete = false;
   final List<String> _dynamicInsights = [];
 
@@ -89,26 +89,19 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
   }
 
   Future<void> _onPickFolderPressed() async {
-    FocusScope.of(context).unfocus();
-    setState(() {
-      _scanStatus = 'Accessing folder...';
-      _isScanning = true;
-      _scanComplete = false;
-      _progressValue = 0.1;
-      _dynamicInsights.clear();
-    });
-
-    final result = await FolderSyncService.pickFolderAndDiscover();
-    if (result == null) {
-      if (mounted) {
-        setState(() {
-          _isScanning = false;
-          _scanStatus = '';
-          _progressValue = 0.35;
-        });
-      }
+    if (_isScanning) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Document indexing is already in progress...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
       return;
     }
+    FocusScope.of(context).unfocus();
+
+    final result = await FolderSyncService.pickFolderAndDiscover();
+    if (result == null) return;
 
     if (mounted) {
       setState(() {
@@ -122,7 +115,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
       if (mounted) {
         setState(() {
           _isScanning = false;
-          _scanStatus = 'No documents (.pdf, .png, .jpg) in "${result.folderDisplayName}"';
+          _scanStatus = 'No supported documents found in "${result.folderDisplayName}"';
         });
       }
       return;
@@ -131,7 +124,10 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
     if (mounted) {
       setState(() {
         _isScanning = true;
-        _scanStatus = 'Scanning: 1 / ${result.files.length} documents...';
+        _scanComplete = false;
+        _progressValue = 0.0;
+        _dynamicInsights.clear();
+        _scanStatus = 'Analyzing documents with Vision AI...';
       });
     }
 
@@ -140,20 +136,21 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
       (progress) {
         if (mounted) {
           setState(() {
-            _scanStatus = 'Scanning: ${progress.processedFiles} / ${progress.totalFiles} documents...';
+            _scanStatus = progress.status;
             if (progress.logMessage != null && progress.logMessage!.isNotEmpty) {
               final cleanMsg = progress.logMessage!
                   .replaceAll('✓', '')
                   .replaceAll('📄', '')
                   .replaceAll('⚡', '')
+                  .replaceAll('🎉', '')
                   .trim();
               if (cleanMsg.isNotEmpty && !_dynamicInsights.contains(cleanMsg)) {
                 _dynamicInsights.insert(0, cleanMsg);
-                if (_dynamicInsights.length > 3) _dynamicInsights.removeLast();
+                if (_dynamicInsights.length > 4) _dynamicInsights.removeLast();
               }
             }
             if (progress.totalFiles > 0) {
-              _progressValue = (progress.processedFiles / progress.totalFiles).clamp(0.05, 1.0);
+              _progressValue = (progress.processedFiles / progress.totalFiles).clamp(0.0, 1.0);
             }
             if (progress.isCompleted) {
               _isScanning = false;
@@ -161,19 +158,13 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
               _progressValue = 1.0;
             }
           });
-
-          if (progress.isCompleted) {
-            Future.delayed(const Duration(milliseconds: 1200), () {
-              if (mounted) _completeOnboarding();
-            });
-          }
         }
       },
       onError: (e) {
         if (mounted) {
           setState(() {
             _isScanning = false;
-            _scanStatus = 'Error: $e';
+            _scanStatus = 'Extraction error: $e';
           });
         }
       },
@@ -182,8 +173,6 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: Container(
@@ -191,7 +180,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            stops: [0.0, 0.35, 0.7, 1.0],
+            stops: [0.0, 0.4, 0.7, 1.0],
             colors: [
               Color(0xFFEFF6FF), // soft airy blue
               Color(0xFFF8FAFC), // clean white slate
@@ -203,49 +192,34 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
         child: SafeArea(
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: screenHeight - MediaQuery.of(context).padding.top - MediaQuery.of(context).padding.bottom - 24,
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 1. TOP SEGMENTED PROGRESS STEPPER
-                      _buildTopStepper(),
-                      const SizedBox(height: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 10),
 
-                      // 2. BRANDING & SECURITY HEADER
-                      _buildBrandHeader(),
-                      const SizedBox(height: 16),
+                // 1. BRANDING & SECURITY HEADER
+                _buildBrandHeader(),
+                const SizedBox(height: 24),
 
-                      // 3. CARDHOLDER SETUP CARD
-                      _buildCardholderSetupCard(),
-                      const SizedBox(height: 14),
+                // 2. CARDHOLDER SETUP CARD
+                _buildCardholderSetupCard(),
+                const SizedBox(height: 16),
 
-                      // 4. FOLDER SELECTION CARD
-                      _buildFolderSelectionCard(),
-                      const SizedBox(height: 14),
+                // 3. FOLDER SELECTION CARD
+                _buildFolderSelectionCard(),
+                const SizedBox(height: 16),
 
-                      // 5. LIVE INDEXING TERMINAL CARD
-                      _buildLiveIndexingTerminalCard(),
-                      const SizedBox(height: 14),
+                // 4. LIVE INDEXING TERMINAL CARD (Only when files are selected/scanning)
+                if (_isScanning || _scanComplete || _selectedFolderPath != null)
+                  _buildLiveIndexingTerminalCard(),
 
-                      // 6. PAGINATION DOTS
-                      _buildPaginationDots(),
-                    ],
-                  ),
+                const SizedBox(height: 32),
 
-                  // 7. BOTTOM CTA BUTTON
-                  Padding(
-                    padding: const EdgeInsets.only(top: 14, bottom: 8),
-                    child: _buildEnterVaultButton(),
-                  ),
-                ],
-              ),
+                // 5. BOTTOM CTA BUTTON
+                _buildEnterVaultButton(),
+                const SizedBox(height: 16),
+              ],
             ),
           ),
         ),
@@ -253,170 +227,119 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
     );
   }
 
-  // 1. TOP SEGMENTED PROGRESS STEPPER (Welcome, Profile, Folder Selection, Scanning)
-  Widget _buildTopStepper() {
-    final steps = ['Welcome', 'Profile', 'Folder Selection', 'Scanning'];
-
-    return Row(
-      children: List.generate(steps.length, (index) {
-        final isActive = index <= 1; // First 2 active as in reference mockup
-
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: index == 0 ? 0 : 3,
-              right: index == steps.length - 1 ? 0 : 3,
-            ),
-            child: Column(
-              children: [
-                Container(
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: isActive
-                        ? const Color(0xFF0F172A)
-                        : const Color(0xFFE2E8F0).withValues(alpha: 0.65),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: 4,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: isActive ? Colors.white : const Color(0xFF94A3B8),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  steps[index],
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                    color: isActive ? const Color(0xFF1E293B) : const Color(0xFF64748B),
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
-  // 2. BRANDING & SECURITY HEADER
+  // 1. BRANDING & SECURITY HEADER
   Widget _buildBrandHeader() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // Left: Stylized dual-tone folded X Logo + "Project X"
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildProjectXLogo(),
-            const SizedBox(width: 8),
-            const Text(
-              'Project X',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
-                letterSpacing: -0.6,
-              ),
-            ),
-          ],
-        ),
-
-        // Right: "100% On-Device & Zero-Knowledge" with glowing shield badge
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.85),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white, width: 1.2),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF0F172A).withValues(alpha: 0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
+        // Left: Logo + "Project X"
+        Expanded(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Text(
-                    '100% On-Device',
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
-                      height: 1.15,
-                    ),
-                  ),
-                  Text(
-                    '& Zero-Knowledge',
-                    style: TextStyle(
-                      fontSize: 8.5,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF64748B),
-                      height: 1.15,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 6),
-              Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF3B82F6), Color(0xFF10B981)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(7),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.35),
-                      blurRadius: 6,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/logo.png',
+                  width: 32,
+                  height: 32,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.shield, color: Color(0xFF0F172A), size: 30),
                 ),
-                child: const Icon(
-                  Icons.verified_user_rounded,
-                  size: 13,
-                  color: Colors.white,
+              ),
+              const SizedBox(width: 8),
+              const Flexible(
+                child: Text(
+                  'Project X',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                    letterSpacing: -0.5,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
+          ),
+        ),
+        const SizedBox(width: 8),
+
+        // Right: "100% On-Device & Zero-Knowledge" with glowing shield badge
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white, width: 1.2),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Text(
+                        '100% On-Device',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                          height: 1.15,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '& Zero-Knowledge',
+                        style: TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF64748B),
+                          height: 1.15,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF3B82F6), Color(0xFF10B981)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(
+                    Icons.verified_user_rounded,
+                    size: 12,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  // Dual-tone Folded X Logo
-  Widget _buildProjectXLogo() {
-    return SizedBox(
-      width: 28,
-      height: 28,
-      child: CustomPaint(
-        painter: _ProjectXLogoPainter(),
-      ),
-    );
-  }
-
-  // 3. CARDHOLDER SETUP CARD
+  // 2. CARDHOLDER SETUP CARD
   Widget _buildCardholderSetupCard() {
     return _buildFrostedContainer(
       child: Column(
@@ -452,11 +375,11 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
               textCapitalization: TextCapitalization.words,
               style: const TextStyle(
                 fontSize: 13.5,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 color: Color(0xFF0F172A),
               ),
               decoration: const InputDecoration(
-                hintText: 'Alex Mercer',
+                hintText: 'Enter your full name',
                 hintStyle: TextStyle(
                   color: Color(0xFF94A3B8),
                   fontSize: 13.5,
@@ -473,11 +396,11 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
     );
   }
 
-  // 4. FOLDER SELECTION CARD
+  // 3. FOLDER SELECTION CARD
   Widget _buildFolderSelectionCard() {
     final folderText = _selectedFolderName != null
         ? '/$_selectedFolderName'
-        : (_selectedFolderPath != null ? _selectedFolderPath! : '/Documents/Vault');
+        : (_selectedFolderPath != null ? _selectedFolderPath! : 'No folder chosen yet');
 
     return _buildFrostedContainer(
       child: Column(
@@ -560,18 +483,22 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
               Container(
                 width: 6,
                 height: 6,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF3B82F6),
+                decoration: BoxDecoration(
+                  color: _selectedFolderName != null ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 6),
-              Text(
-                'Selected: $folderText',
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF475569),
+              Expanded(
+                child: Text(
+                  'Selected: $folderText',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF475569),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -581,28 +508,39 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
     );
   }
 
-  // 5. LIVE INDEXING TERMINAL CARD
+  // 4. LIVE INDEXING TERMINAL CARD
   Widget _buildLiveIndexingTerminalCard() {
     final statusText = _scanStatus.isNotEmpty
         ? _scanStatus
         : (_isScanning
             ? 'Scanning: ${_discoveredFiles.length} documents...'
             : (_scanComplete
-                ? 'Indexed ${_discoveredFiles.length} documents'
-                : 'Scanning: 4 / 12 documents...'));
+                ? 'Indexing complete (${_discoveredFiles.length} files saved)'
+                : 'Ready to scan folder'));
 
     return _buildFrostedContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Live Indexing Terminal',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF0F172A),
-              letterSpacing: -0.2,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Live Indexing Terminal',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
+                  letterSpacing: -0.2,
+                ),
+              ),
+              if (_isScanning)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0F172A)),
+                ),
+            ],
           ),
           const SizedBox(height: 10),
           Container(
@@ -625,7 +563,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                // Vibrant Glowing Teal/Cyan-Emerald Progress Bar
+                // Glowing Progress Bar
                 Stack(
                   children: [
                     Container(
@@ -637,7 +575,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                       ),
                     ),
                     FractionallySizedBox(
-                      widthFactor: _progressValue.clamp(0.05, 1.0),
+                      widthFactor: _progressValue.clamp(0.0, 1.0),
                       child: Container(
                         height: 5,
                         decoration: BoxDecoration(
@@ -649,13 +587,6 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                             ],
                           ),
                           borderRadius: BorderRadius.circular(3),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.5),
-                              blurRadius: 6,
-                              spreadRadius: 1,
-                            ),
-                          ],
                         ),
                       ),
                     ),
@@ -663,18 +594,35 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // Checklist Items matching the image
-                _buildTerminalCheckItem(
-                  _dynamicInsights.isNotEmpty ? _dynamicInsights[0] : 'Analyzing deadlines...',
-                ),
-                const SizedBox(height: 6),
-                _buildTerminalCheckItem(
-                  _dynamicInsights.length > 1 ? _dynamicInsights[1] : 'Extracting key insights...',
-                ),
-                const SizedBox(height: 6),
-                _buildTerminalCheckItem(
-                  _dynamicInsights.length > 2 ? _dynamicInsights[2] : 'Extracting key insights...',
-                ),
+                // Dynamic Checklist Items
+                if (_dynamicInsights.isNotEmpty)
+                  ..._dynamicInsights.map((insight) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF10B981)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              insight,
+                              style: const TextStyle(fontSize: 11.5, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  })
+                else
+                  Row(
+                    children: const [
+                      Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF10B981)),
+                      SizedBox(width: 8),
+                      Text('Ready to discover documents in vault', style: TextStyle(fontSize: 11.5, color: Color(0xFF334155))),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -683,100 +631,79 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
     );
   }
 
-  Widget _buildTerminalCheckItem(String label) {
-    return Row(
-      children: [
-        const Icon(
-          Icons.check_circle_rounded,
-          size: 15,
-          color: Color(0xFF10B981),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF334155),
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // 6. PAGINATION DOTS
-  Widget _buildPaginationDots() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 18,
-          height: 4,
-          decoration: BoxDecoration(
-            color: const Color(0xFF94A3B8),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Container(
-          width: 4,
-          height: 4,
-          decoration: const BoxDecoration(
-            color: Color(0xFFCBD5E1),
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Container(
-          width: 4,
-          height: 4,
-          decoration: const BoxDecoration(
-            color: Color(0xFFCBD5E1),
-            shape: BoxShape.circle,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // 7. BOTTOM CTA BUTTON
+  // 5. BOTTOM CTA BUTTON
   Widget _buildEnterVaultButton() {
+    final bool canEnter = _scanComplete && !_isScanning;
+
     return SizedBox(
       width: double.infinity,
       height: 52,
       child: ElevatedButton(
-        onPressed: _completeOnboarding,
+        onPressed: canEnter ? _completeOnboarding : null,
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF0B132B),
+          backgroundColor: canEnter ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
           foregroundColor: Colors.white,
-          elevation: 2,
-          shadowColor: const Color(0xFF0B132B).withValues(alpha: 0.35),
+          disabledBackgroundColor: const Color(0xFFE2E8F0),
+          disabledForegroundColor: const Color(0xFF94A3B8),
+          elevation: canEnter ? 2 : 0,
+          shadowColor: const Color(0xFF0F172A).withValues(alpha: 0.35),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Text(
-              'Enter My Vault',
-              style: TextStyle(
-                fontSize: 14.5,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-                letterSpacing: 0.2,
+          children: [
+            if (_isScanning) ...[
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF64748B)),
+                ),
               ),
-            ),
-            SizedBox(width: 6),
-            Icon(
-              Icons.arrow_forward_rounded,
-              color: Colors.white,
-              size: 16,
-            ),
+              const SizedBox(width: 10),
+              const Text(
+                'Indexing Documents in Progress...',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ] else if (_scanComplete) ...[
+              const Text(
+                'Enter My Vault',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                color: Colors.white,
+                size: 16,
+              ),
+            ] else ...[
+              const Icon(
+                Icons.lock_outline_rounded,
+                size: 16,
+                color: Color(0xFF94A3B8),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Select Folder to Complete Indexing',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -789,7 +716,7 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
+        color: Colors.white.withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: Colors.white,
@@ -806,49 +733,4 @@ class _OnboardingSetupScreenState extends State<OnboardingSetupScreen> {
       child: child,
     );
   }
-}
-
-// Custom Painter for the modern geometric dual-tone "X" logo
-class _ProjectXLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    // Stroke 1: Dark Slate Navy Ribbon
-    final paintDark = Paint()
-      ..color = const Color(0xFF1E293B)
-      ..style = PaintingStyle.fill;
-
-    final pathDark = Path()
-      ..moveTo(w * 0.1, 0)
-      ..lineTo(w * 0.38, 0)
-      ..lineTo(w * 0.9, h)
-      ..lineTo(w * 0.62, h)
-      ..close();
-
-    canvas.drawPath(pathDark, paintDark);
-
-    // Stroke 2: Vibrant Blue-Cyan Gradient Ribbon crossing over
-    final rect = Rect.fromLTWH(0, 0, w, h);
-    final paintBlue = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ).createShader(rect)
-      ..style = PaintingStyle.fill;
-
-    final pathBlue = Path()
-      ..moveTo(w * 0.62, 0)
-      ..lineTo(w * 0.9, 0)
-      ..lineTo(w * 0.38, h)
-      ..lineTo(w * 0.1, h)
-      ..close();
-
-    canvas.drawPath(pathBlue, paintBlue);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

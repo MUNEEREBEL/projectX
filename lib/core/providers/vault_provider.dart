@@ -14,9 +14,16 @@ final personsProvider = FutureProvider<List<Person>>((ref) async {
 
 final selectedPersonIdProvider = StateProvider<String?>((ref) => null);
 
+final allDocumentsProvider = FutureProvider<List<DocumentModel>>((ref) async {
+  final db = DatabaseService.instance;
+  await db.cleanupDuplicates();
+  return await db.getAllDocuments();
+});
+
 final documentsProvider = FutureProvider<List<DocumentModel>>((ref) async {
   final selectedPersonId = ref.watch(selectedPersonIdProvider);
   final db = DatabaseService.instance;
+  await db.cleanupDuplicates();
   if (selectedPersonId == null) {
     return await db.getAllDocuments();
   } else {

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 
 class OverlayService {
-  static const MethodChannel _channel = MethodChannel('com.example.x/assistive_overlay');
+  static const MethodChannel _channel = MethodChannel('com.example.x/storage_channel');
 
   static Future<bool> canDrawOverlays() async {
     if (!Platform.isAndroid) return false;

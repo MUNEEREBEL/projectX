@@ -21,12 +21,14 @@ class MainActivity : FlutterActivity() {
     private val STORAGE_CHANNEL = "com.example.x/storage_channel"
     private val REQ_PICK_FOLDER = 9921
     private var pendingFolderResult: MethodChannel.Result? = null
+    private var channel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
         // Native Storage & Folder Discovery Channel
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, STORAGE_CHANNEL).setMethodCallHandler { call, result ->
+        channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, STORAGE_CHANNEL)
+        channel!!.setMethodCallHandler { call, result ->
             when (call.method) {
                 "hasStoragePermission" -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -81,8 +83,75 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "canDrawOverlays" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        result.success(Settings.canDrawOverlays(this))
+                    } else {
+                        result.success(true)
+                    }
+                }
+                "requestOverlayPermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        try {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            try {
+                                val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                                startActivity(intent)
+                                result.success(true)
+                            } catch (e2: Exception) {
+                                result.error("OVERLAY_ERROR", e2.message, null)
+                            }
+                        }
+                    } else {
+                        result.success(true)
+                    }
+                }
+                "startAssistiveBall" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val intent = Intent(this, AssistiveBallService::class.java)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "stopAssistiveBall" -> {
+                    try {
+                        val intent = Intent(this, AssistiveBallService::class.java)
+                        stopService(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SERVICE_STOP_FAILED", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
+        }
+
+        if (intent?.getBooleanExtra("OPEN_COPILOT", false) == true) {
+            channel?.invokeMethod("openAssistiveDialog", null)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("OPEN_COPILOT", false) == true) {
+            channel?.invokeMethod("openAssistiveDialog", null)
         }
     }
 
@@ -100,7 +169,7 @@ class MainActivity : FlutterActivity() {
                         val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                         try {
                             applicationContext.contentResolver.takePersistableUriPermission(treeUri, takeFlags)
-                        } catch (_: Exception) {}
+                        } catch (e: Exception) {}
 
                         val docFile = DocumentFile.fromTreeUri(applicationContext, treeUri)
                         val folderName = docFile?.name ?: "Monitored Folder"
@@ -133,7 +202,7 @@ class MainActivity : FlutterActivity() {
                     treeUri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
 
             val docFile = DocumentFile.fromTreeUri(applicationContext, treeUri)
             if (docFile != null && docFile.isDirectory) {
@@ -221,7 +290,7 @@ class MainActivity : FlutterActivity() {
                     bitmap.recycle()
                     return
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
         }
 
         // Direct stream copy

@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'core/theme/glass_card.dart';
 import 'features/assistant/assistant_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
@@ -20,21 +21,36 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     DashboardScreen(),
     VaultScreen(),
     AssistantScreen(),
-    VaultScreen(), // Expiry tab navigates to vault documents
     SettingsScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
-    return GlassBackgroundWrapper(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        extendBody: true,
-        body: IndexedStack(
-          index: _currentIndex,
-          children: _screens,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_currentIndex != 0) {
+          // If on secondary tab (Vault, Ask, Settings), back button returns to Dashboard
+          setState(() => _currentIndex = 0);
+        } else {
+          // Clean exit from Dashboard without unhandled route pop
+          SystemNavigator.pop();
+        }
+      },
+      child: GlassBackgroundWrapper(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          resizeToAvoidBottomInset: false,
+          extendBody: true,
+          body: IndexedStack(
+            index: _currentIndex,
+            children: _screens,
+          ),
+          bottomNavigationBar: MediaQuery.of(context).viewInsets.bottom > 0
+              ? const SizedBox.shrink()
+              : _buildGlassBottomBar(),
         ),
-        bottomNavigationBar: _buildGlassBottomBar(),
       ),
     );
   }
@@ -44,7 +60,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       {'icon': Icons.grid_view_rounded, 'label': 'Dashboard'},
       {'icon': Icons.folder_outlined, 'label': 'Vault'},
       {'icon': Icons.auto_awesome_outlined, 'label': 'AI Ask'},
-      {'icon': Icons.access_time_rounded, 'label': 'Expiry'},
       {'icon': Icons.settings_outlined, 'label': 'Settings'},
     ];
 

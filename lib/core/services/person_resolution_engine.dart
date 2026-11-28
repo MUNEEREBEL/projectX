@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/person.dart';
 import '../database/database_service.dart';
@@ -6,8 +7,26 @@ class PersonResolutionEngine {
   static const _uuid = Uuid();
 
   static const _commonTitles = {
-    'mr', 'mrs', 'ms', 'miss', 'dr', 'shri', 'smt', 'kumari', 'km', 'er', 'prof', 'master'
+    'mr', 'mrs', 'ms', 'miss', 'dr', 'shri', 'smt', 'kumari', 'km', 'er', 'prof', 'master',
+    'bi', 'bee', 'begum', 'devi', 'bai', 'khan', 'shaik', 'sheikh'
   };
+
+  static const _placeholderRoles = {
+    'mother', 'father', 'parent', 'spouse', 'wife', 'husband', 'child',
+    'son', 'daughter', 'head', 'ration', 'card', 'holder', 'primary',
+    'user', 'cardholder', 'unknown', 'member', 'family', 'applicant', 'self',
+    'ration card holder', 'card holder', 'head of family', 'primary user',
+    'primary cardholder', 'family member'
+  };
+
+  /// Returns true if a string is a role or generic placeholder rather than a real human name
+  static bool isGenericPlaceholder(String name) {
+    final clean = name.trim().toLowerCase();
+    if (clean.isEmpty) return true;
+    if (_placeholderRoles.contains(clean)) return true;
+    final tokens = clean.split(RegExp(r'\s+'));
+    return tokens.every((t) => _placeholderRoles.contains(t));
+  }
 
   static const _nameAliases = {
     'md': 'mohammed',
@@ -30,11 +49,27 @@ class PersonResolutionEngine {
   }) async {
     final db = DatabaseService.instance;
     final existingPersons = await db.getAllPersons();
+    final prefs = await SharedPreferences.getInstance();
+    final storedOwnerName = (prefs.getString('vault_owner_name') ?? '').trim();
+
+    Person? selfPerson;
+    try {
+      selfPerson = existingPersons.firstWhere((p) => p.relationship == 'Self');
+    } catch (_) {
+      if (existingPersons.isNotEmpty) selfPerson = existingPersons.first;
+    }
+
+    final effectiveOwnerName = (storedOwnerName.isNotEmpty &&
+            !isGenericPlaceholder(storedOwnerName))
+        ? storedOwnerName
+        : (selfPerson != null && !isGenericPlaceholder(selfPerson.name)
+            ? selfPerson.name
+            : (!isGenericPlaceholder(holderName) ? holderName.trim() : 'Primary Owner'));
 
     if (existingPersons.isEmpty) {
       final newPerson = Person(
         id: _uuid.v4(),
-        name: holderName.trim().isEmpty ? 'Primary User' : holderName.trim(),
+        name: effectiveOwnerName,
         relationship: 'Self',
         dob: dob,
         gender: gender,
@@ -45,68 +80,59 @@ class PersonResolutionEngine {
       return newPerson;
     }
 
-    // 1. If explicitly verified by AI as the primary cardholder:
-    if (isPrimaryCardholder) {
-      final self = existingPersons.firstWhere(
-        (p) => p.relationship == 'Self',
-        orElse: () => existingPersons.first,
-      );
-      return self;
+    // Filter out placeholders from holderName
+    String candidateName = holderName.trim();
+    if (isGenericPlaceholder(candidateName)) {
+      candidateName = '';
     }
 
-    // 2. If explicitly designated as a non-Self family member (e.g. Father, Mother):
-    if (relationshipToCardholder != null && relationshipToCardholder.toLowerCase() != 'self') {
-      for (final person in existingPersons) {
-        if (person.relationship.toLowerCase() == relationshipToCardholder.toLowerCase()) {
-          if (isNameMatch(holderName, person.name)) {
+    // 1. If explicitly verified by AI as the primary cardholder or matches registered owner:
+    if (isPrimaryCardholder ||
+        (candidateName.isNotEmpty && isNameMatch(candidateName, effectiveOwnerName)) ||
+        (selfPerson != null && candidateName.isNotEmpty && isNameMatch(candidateName, selfPerson.name))) {
+      return selfPerson ?? existingPersons.first;
+    }
+
+    // Target relationship type
+    final targetRel = relationshipToCardholder ?? relationType ?? 'Family Member';
+
+    // 2. If designated as non-Self family member, try matching by name or relationship
+    if (targetRel.toLowerCase() != 'self') {
+      if (candidateName.isNotEmpty) {
+        for (final person in existingPersons) {
+          if (isNameMatch(candidateName, person.name)) {
+            return person;
+          }
+        }
+      } else {
+        // Candidate name is empty, but relationship is known (e.g. "Mother")
+        for (final person in existingPersons) {
+          if (person.relationship.toLowerCase() == targetRel.toLowerCase() && !isGenericPlaceholder(person.name)) {
             return person;
           }
         }
       }
-
-      for (final person in existingPersons) {
-        if (person.relationship != 'Self' && isNameMatch(holderName, person.name)) {
-          return person;
-        }
-      }
-
-      final newPerson = Person(
-        id: _uuid.v4(),
-        name: holderName.trim().isEmpty ? relationshipToCardholder : holderName.trim(),
-        relationship: relationshipToCardholder,
-        dob: dob,
-        gender: gender,
-        avatarColorIndex: existingPersons.length % 6,
-        createdAt: DateTime.now(),
-      );
-      await db.upsertPerson(newPerson);
-      return newPerson;
     }
 
-    // 3. Try to find match among existing persons
-    for (final person in existingPersons) {
-      if (isNameMatch(holderName, person.name)) {
-        if (dob != null && person.dob != null && dob.isNotEmpty && person.dob!.isNotEmpty) {
-          if (dob == person.dob) {
-            return person;
-          }
-          continue;
-        } else {
+    // 3. Try finding match among existing persons by candidate name
+    if (candidateName.isNotEmpty) {
+      for (final person in existingPersons) {
+        if (isNameMatch(candidateName, person.name)) {
           return person;
         }
       }
     }
 
-    // 4. Create new Person profile for this family member
-    String relationship = 'Family Member';
-    if (relationType != null && relationType.toLowerCase().contains('father')) {
-      relationship = 'Father';
+    // 4. If candidateName is empty or a placeholder, fallback to selfPerson
+    if (candidateName.isEmpty || isGenericPlaceholder(candidateName)) {
+      return selfPerson ?? existingPersons.first;
     }
 
+    // 5. Create new Person profile for this family member with valid name
     final newPerson = Person(
       id: _uuid.v4(),
-      name: holderName.trim().isEmpty ? 'Family Member' : holderName.trim(),
-      relationship: relationship,
+      name: candidateName,
+      relationship: targetRel,
       dob: dob,
       gender: gender,
       avatarColorIndex: existingPersons.length % 6,
@@ -187,10 +213,29 @@ class PersonResolutionEngine {
   static bool isNameMatch(String nameA, String nameB) {
     if (nameA.trim().toLowerCase() == nameB.trim().toLowerCase()) return true;
 
+    final cleanA = nameA.trim().toLowerCase();
+    final cleanB = nameB.trim().toLowerCase();
+
+    // Generic placeholders must never match legitimate names
+    if (isGenericPlaceholder(cleanA) || isGenericPlaceholder(cleanB)) {
+      return false;
+    }
+
     final tokensA = tokenizeName(nameA);
     final tokensB = tokenizeName(nameB);
 
     if (tokensA.isEmpty || tokensB.isEmpty) return false;
+
+    // Single token vs multi token comparison (e.g. "Hazar" / "Hazara" vs "Hazara Bi" / "Hazara Begum")
+    if (tokensA.length == 1 || tokensB.length == 1) {
+      final single = tokensA.length == 1 ? tokensA.first : tokensB.first;
+      final multi = tokensA.length == 1 ? tokensB : tokensA;
+      if (single.length >= 3 && multi.any((t) =>
+          _isTokenMatch(single, t) ||
+          (t.length >= 4 && (t.startsWith(single) || single.startsWith(t))))) {
+        return true;
+      }
+    }
 
     // Conflicting distinctive tokens check:
     // If nameA has an unmatched token AND nameB has an unmatched token, they are DIFFERENT family members!
@@ -206,7 +251,7 @@ class PersonResolutionEngine {
     int matchingTokens = 0;
     for (final tA in tokensA) {
       for (final tB in tokensB) {
-        if (_isTokenMatch(tA, tB)) {
+        if (_isTokenMatch(tA, tB) || (tA.length >= 4 && tB.length >= 4 && (tA.startsWith(tB) || tB.startsWith(tA)))) {
           matchingTokens++;
           break;
         }
@@ -217,8 +262,8 @@ class PersonResolutionEngine {
       return true;
     }
 
-    if (tokensA.length == 1 && tokensB.length == 1) {
-      return _isTokenMatch(tokensA.first, tokensB.first);
+    if (matchingTokens >= 1 && (tokensA.length == 1 || tokensB.length == 1)) {
+      return true;
     }
 
     // Handle Indian single-letter initials (e.g. "S. Muneer" vs "Shaik Muneer")

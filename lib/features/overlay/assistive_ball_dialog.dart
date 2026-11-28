@@ -1,10 +1,10 @@
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/database/database_service.dart';
 import '../../core/services/qa_assistant_service.dart';
+import '../../models/document_field.dart';
 import '../../models/document_model.dart';
 
 class AssistiveBallDialog extends StatefulWidget {
@@ -23,32 +23,23 @@ class AssistiveBallDialog extends StatefulWidget {
 }
 
 class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
-  int _activeTab = 0; // 0 = Chat System, 1 = Vault Files
+  int _activeTab = 0; // 0 = Vault Explorer, 1 = Copilot Chat
 
+  final TextEditingController _vaultSearchController = TextEditingController();
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isChatLoading = false;
 
   final List<Map<String, dynamic>> _chatMessages = [
     {
-      'text': 'What is my father\'s PAN number?',
-      'isUser': true,
-    },
-    {
-      'text': 'Your father\'s PAN is ABCDE1234F.',
+      'text': 'Ask X anything about your cards, account numbers, or documents.',
       'isUser': false,
-      'copyable': 'ABCDE1234F',
-      'copyLabel': 'Copy PAN',
     },
   ];
 
-  // Quick Copy extracted fields from Vault
-  String? _userPan;
-  String? _userAadhaar;
-  String? _userIfsc;
-  String? _userAddress;
-
   List<DocumentModel> _documents = [];
+  Map<String, List<DocumentField>> _docFields = {};
+  final Set<String> _expandedDocIds = {};
   bool _isLoadingData = true;
 
   @override
@@ -57,38 +48,33 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
     _loadVaultData();
   }
 
+  @override
+  void dispose() {
+    _vaultSearchController.dispose();
+    _chatController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadVaultData() async {
     final db = DatabaseService.instance;
+    await db.cleanupDuplicates();
     final docs = await db.getAllDocuments();
-
-    String? pan;
-    String? aadhaar;
-    String? ifsc;
-    String? address;
+    final Map<String, List<DocumentField>> fieldsMap = {};
 
     for (final doc in docs) {
       final fields = await db.getFieldsForDocument(doc.id);
-      for (final f in fields) {
-        final name = f.fieldName.toLowerCase();
-        if (pan == null && (name.contains('pan') || doc.docType == 'PAN')) {
-          pan = f.fieldValue;
-        } else if (aadhaar == null && (name.contains('aadhaar') || doc.docType == 'AADHAAR')) {
-          aadhaar = f.fieldValue;
-        } else if (ifsc == null && name.contains('ifsc')) {
-          ifsc = f.fieldValue;
-        } else if (address == null && (name.contains('address') || name.contains('permanent'))) {
-          address = f.fieldValue;
-        }
-      }
+      fieldsMap[doc.id] = fields;
     }
 
     if (mounted) {
       setState(() {
         _documents = docs;
-        _userPan = pan ?? 'ABCDE1234F';
-        _userAadhaar = aadhaar ?? '9876 5432 4821';
-        _userIfsc = ifsc ?? 'SBIN0001234';
-        _userAddress = address ?? 'Green Oak Avenue, Bangalore';
+        _docFields = fieldsMap;
+        // Expand first document by default
+        if (docs.isNotEmpty) {
+          _expandedDocIds.add(docs.first.id);
+        }
         _isLoadingData = false;
       });
     }
@@ -116,29 +102,18 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
       _isChatLoading = true;
     });
 
-    _scrollToBottom();
-
     try {
       final response = await QAAssistantService.askQuestion(text);
       if (mounted) {
-        String? copyVal;
-        String? copyLabel;
-
-        if (response.copyableValues.isNotEmpty) {
-          copyVal = response.copyableValues.first;
-          copyLabel = 'Copy Value';
-        }
-
         setState(() {
           _chatMessages.add({
             'text': response.answer,
             'isUser': false,
-            'copyable': copyVal,
-            'copyLabel': copyLabel,
+            'copyable': response.copyableValues.isNotEmpty ? response.copyableValues.first : null,
+            'copyLabel': 'Value',
           });
           _isChatLoading = false;
         });
-        _scrollToBottom();
       }
     } catch (e) {
       if (mounted) {
@@ -149,114 +124,84 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
           });
           _isChatLoading = false;
         });
-        _scrollToBottom();
       }
     }
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.transparent,
-      elevation: 0,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white, width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF0F172A).withValues(alpha: 0.12),
-                  blurRadius: 28,
-                  offset: const Offset(0, 10),
-                ),
-              ],
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.78,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0F172A).withValues(alpha: 0.15),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 1. TOP HEADER: "Project X" + Pulse Waveform + Tab Toggles + Close
-                _buildHeader(),
-                const SizedBox(height: 12),
-
-                // 2. QUICK-COPY PILLS ROW (PAN, Aadhaar, Bank IFSC, Address)
-                _buildQuickCopyPills(),
-                const SizedBox(height: 12),
-
-                // 3. BODY (Chat System OR Vault Files View)
-                Expanded(
-                  child: _activeTab == 0 ? _buildChatSystem() : _buildVaultFilesView(),
-                ),
-
-                // 4. BOTTOM INPUT BAR (Only visible in Chat mode)
-                if (_activeTab == 0) ...[
-                  const SizedBox(height: 10),
-                  _buildBottomInputBar(),
-                ],
-              ],
+          ],
+        ),
+        child: Column(
+          children: [
+            // Top Header: Title, Segment Tabs, Close
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 14, 10),
+              child: _buildHeader(),
             ),
-          ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+            // Body: Real Vault Explorer vs Copilot Chat
+            Expanded(
+              child: _activeTab == 0 ? _buildRealVaultView() : _buildChatView(),
+            ),
+
+            if (_activeTab == 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
+                child: _buildBottomInputBar(),
+              ),
+          ],
         ),
       ),
     );
   }
 
-  // 1. TOP HEADER
   Widget _buildHeader() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // Left: Folded X Logo + "Project X" + Waveform Pulse
+        // Title
         Row(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildSmallProjectXLogo(),
-            const SizedBox(width: 6),
-            const Text(
-              'Project X',
+          children: const [
+            Text(
+              'PROJECT ',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
                 color: Color(0xFF0F172A),
-                letterSpacing: -0.3,
+                letterSpacing: 0.5,
               ),
             ),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.graphic_eq_rounded,
-                size: 15,
+            Text(
+              'X',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
                 color: Color(0xFF00B4D8),
+                letterSpacing: 0.5,
               ),
             ),
           ],
         ),
 
-        // Middle: Tabs Toggle (Chat vs Vault)
+        // Tabs Toggle (Vault Explorer vs Copilot Chat)
         Container(
           padding: const EdgeInsets.all(2),
           decoration: BoxDecoration(
@@ -265,8 +210,8 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
           ),
           child: Row(
             children: [
-              _buildTabButton(title: 'Chat', index: 0),
-              _buildTabButton(title: 'Vault', index: 1),
+              _buildTabButton(title: 'Vault', index: 0),
+              _buildTabButton(title: 'Copilot', index: 1),
             ],
           ),
         ),
@@ -276,7 +221,7 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
           onTap: () => Navigator.pop(context),
           borderRadius: BorderRadius.circular(12),
           child: Container(
-            padding: const EdgeInsets.all(4),
+            padding: const EdgeInsets.all(6),
             child: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
           ),
         ),
@@ -290,7 +235,7 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
       onTap: () => setState(() => _activeTab = index),
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
@@ -301,7 +246,7 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
         child: Text(
           title,
           style: TextStyle(
-            fontSize: 11,
+            fontSize: 11.5,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
             color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
           ),
@@ -310,126 +255,349 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
     );
   }
 
-  Widget _buildSmallProjectXLogo() {
-    return SizedBox(
-      width: 20,
-      height: 20,
-      child: CustomPaint(
-        painter: _ProjectXSmallPainter(),
-      ),
-    );
-  }
+  // Real Vault View: Full list of documents with all extracted fields
+  Widget _buildRealVaultView() {
+    if (_isLoadingData) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
 
-  // 2. QUICK-COPY PILLS ROW
-  Widget _buildQuickCopyPills() {
-    // Masked strings
-    final panDisplay = _userPan != null && _userPan!.length >= 4
-        ? 'PAN: ${_userPan!.substring(0, 2)}***${_userPan!.substring(_userPan!.length - 3)}'
-        : 'PAN: AB***12P';
+    if (_documents.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Icon(Icons.folder_open_rounded, size: 40, color: Color(0xFF94A3B8)),
+            SizedBox(height: 8),
+            Text('No documents indexed in vault yet', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+            SizedBox(height: 2),
+            Text('Sync your folder from the main app to see cards here.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+          ],
+        ),
+      );
+    }
 
-    final aadhaarDisplay = _userAadhaar != null && _userAadhaar!.length >= 4
-        ? 'Aadhaar: •••• ${_userAadhaar!.replaceAll(' ', '').substring(_userAadhaar!.replaceAll(' ', '').length - 4)}'
-        : 'Aadhaar: •••• 4821';
-
-    final ifscDisplay = _userIfsc != null ? 'Bank IFSC: $_userIfsc' : 'Bank IFSC: SBIN0001234';
+    final query = _vaultSearchController.text.trim().toLowerCase();
+    final filtered = _documents.where((d) {
+      if (query.isEmpty) return true;
+      final matchTitle = d.title.toLowerCase().contains(query);
+      final matchId = d.idNumber != null && d.idNumber!.toLowerCase().contains(query);
+      final fields = _docFields[d.id] ?? [];
+      final matchFields = fields.any((f) => f.fieldName.toLowerCase().contains(query) || f.fieldValue.toLowerCase().contains(query));
+      return matchTitle || matchId || matchFields;
+    }).toList();
 
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _buildCopyPill(
-                label: panDisplay,
-                copyValue: _userPan ?? 'ABCDE1234F',
-                itemLabel: 'PAN',
-              ),
+        // Search bar for real-time vault filtering
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+          child: Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _buildCopyPill(
-                label: aadhaarDisplay,
-                copyValue: _userAadhaar ?? '9876 5432 4821',
-                itemLabel: 'Aadhaar',
-              ),
+            child: Row(
+              children: [
+                const Icon(Icons.search_rounded, size: 18, color: Color(0xFF94A3B8)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _vaultSearchController,
+                    onChanged: (_) => setState(() {}),
+                    style: const TextStyle(fontSize: 12.5, color: Color(0xFF0F172A)),
+                    decoration: const InputDecoration(
+                      hintText: 'Search cards, names, numbers, IFSC...',
+                      hintStyle: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                if (_vaultSearchController.text.isNotEmpty)
+                  GestureDetector(
+                    onTap: () {
+                      _vaultSearchController.clear();
+                      setState(() {});
+                    },
+                    child: const Icon(Icons.clear, size: 16, color: Color(0xFF94A3B8)),
+                  ),
+              ],
             ),
-          ],
+          ),
         ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(
-              flex: 3,
-              child: _buildCopyPill(
-                label: ifscDisplay,
-                copyValue: _userIfsc ?? 'SBIN0001234',
-                itemLabel: 'IFSC',
+
+        // Attention Banner (Expiring or Expired documents)
+        Builder(
+          builder: (context) {
+            final attentionDocs = _documents.where((d) => d.isExpired || (d.daysUntilExpiry ?? 999) <= 45).toList();
+            if (attentionDocs.isEmpty) return const SizedBox.shrink();
+            return Container(
+              margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFECACA)),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 2,
-              child: _buildCopyPill(
-                label: 'Address',
-                copyValue: _userAddress ?? 'Green Oak Avenue, Bangalore',
-                itemLabel: 'Address',
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFDC2626)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${attentionDocs.length} Document${attentionDocs.length > 1 ? 's' : ''} Need Attention (Expired / Expiring)',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFB91C1C)),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+            );
+          },
+        ),
+
+        // Scrollable list of document cards
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            physics: const BouncingScrollPhysics(),
+            itemCount: filtered.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final doc = filtered[index];
+              final fields = _docFields[doc.id] ?? [];
+              final isExpanded = _expandedDocIds.contains(doc.id) || query.isNotEmpty;
+
+              // Find real holder name
+              String? holderName;
+              for (final f in fields) {
+                if (f.fieldName.toLowerCase() == 'full name' &&
+                    f.fieldValue.trim().isNotEmpty &&
+                    f.fieldValue.toLowerCase() != 'unknown' &&
+                    f.fieldValue.toLowerCase() != 'primary user' &&
+                    f.fieldValue.toLowerCase() != 'primary cardholder') {
+                  holderName = f.fieldValue.trim();
+                  break;
+                }
+              }
+
+              // Status badge
+              String? statusBadge;
+              Color statusBg = const Color(0xFFDCFCE7);
+              Color statusFg = const Color(0xFF16A34A);
+              if (doc.expiryDate != null) {
+                final days = doc.expiryDate!.difference(DateTime.now()).inDays;
+                if (days < 0) {
+                  statusBadge = 'EXPIRED';
+                  statusBg = const Color(0xFFFEE2E2);
+                  statusFg = const Color(0xFFDC2626);
+                } else if (days <= 45) {
+                  statusBadge = 'Exp ${days}d';
+                  statusBg = const Color(0xFFFEF3C7);
+                  statusFg = const Color(0xFFD97706);
+                }
+              }
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: statusBadge == 'EXPIRED' ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0),
+                    width: statusBadge == 'EXPIRED' ? 1.4 : 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.02),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // Card Header: Tap to expand
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (_expandedDocIds.contains(doc.id)) {
+                            _expandedDocIds.remove(doc.id);
+                          } else {
+                            _expandedDocIds.add(doc.id);
+                          }
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(14),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.description_outlined, size: 20, color: Color(0xFF2563EB)),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          doc.title,
+                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (statusBadge != null) ...[
+                                        const SizedBox(width: 4),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                          decoration: BoxDecoration(color: statusBg, borderRadius: BorderRadius.circular(4)),
+                                          child: Text(statusBadge, style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: statusFg)),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      if (holderName != null) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                          decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(4)),
+                                          child: Text(holderName, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                        ),
+                                        const SizedBox(width: 4),
+                                      ],
+                                      Expanded(
+                                        child: Text(
+                                          doc.idNumber != null && doc.idNumber!.isNotEmpty
+                                              ? doc.idNumber!
+                                              : 'Category: ${doc.category}',
+                                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (doc.idNumber != null && doc.idNumber!.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.copy_rounded, size: 16, color: Color(0xFF00B4D8)),
+                                tooltip: 'Copy ID',
+                                onPressed: () => _copy(doc.idNumber!, doc.title),
+                              ),
+                            Icon(
+                              isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                              size: 20,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Expanded Section: All Extracted Fields with 1-Tap Copy
+                    if (isExpanded) ...[
+                      const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.vertical(bottom: Radius.circular(14)),
+                        ),
+                        child: fields.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.all(8.0),
+                                child: Text('No extracted fields available', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                              )
+                            : Column(
+                                children: fields.map((field) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          flex: 4,
+                                          child: Text(
+                                            field.fieldName,
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          flex: 5,
+                                          child: Text(
+                                            field.fieldValue,
+                                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        InkWell(
+                                          onTap: () => _copy(field.fieldValue, field.fieldName),
+                                          borderRadius: BorderRadius.circular(6),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: const [
+                                                Icon(Icons.copy_rounded, size: 11, color: Color(0xFF00B4D8)),
+                                                SizedBox(width: 3),
+                                                Text('Copy', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildCopyPill({required String label, required String copyValue, required String itemLabel}) {
-    return InkWell(
-      onTap: () => _copy(copyValue, itemLabel),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9).withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF334155),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 4),
-            const Icon(
-              Icons.copy_rounded,
-              size: 13,
-              color: Color(0xFF64748B),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 3A. CHAT SYSTEM (Inside X)
-  Widget _buildChatSystem() {
+  // Copilot Chat View
+  Widget _buildChatView() {
     return ListView.builder(
       controller: _scrollController,
       physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       itemCount: _chatMessages.length,
       itemBuilder: (context, index) {
         final msg = _chatMessages[index];
         final isUser = msg['isUser'] as bool;
         final text = msg['text'] as String;
         final copyable = msg['copyable'] as String?;
-        final copyLabel = msg['copyLabel'] as String?;
 
         if (isUser) {
           return Align(
@@ -438,24 +606,12 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
               margin: const EdgeInsets.only(bottom: 10, left: 40),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: const Color(0xFF0F172A),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF0F172A).withValues(alpha: 0.03),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
               ),
               child: Text(
                 text,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF0F172A),
-                ),
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: Colors.white),
               ),
             ),
           );
@@ -467,54 +623,35 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
             margin: const EdgeInsets.only(bottom: 10, right: 30),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: const Color(0xFFE2E8F0)),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF0F172A).withValues(alpha: 0.03),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   text,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF0F172A),
-                    height: 1.35,
-                  ),
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF1E293B), height: 1.35),
                 ),
                 if (copyable != null) ...[
                   const SizedBox(height: 8),
                   InkWell(
-                    onTap: () => _copy(copyable, copyLabel ?? 'Value'),
+                    onTap: () => _copy(copyable, 'Value'),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            copyLabel ?? 'Copy',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.copy_rounded, size: 12, color: Color(0xFF0F172A)),
+                        children: const [
+                          Icon(Icons.copy_rounded, size: 12, color: Color(0xFF00B4D8)),
+                          SizedBox(width: 4),
+                          Text('Copy Value', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
                         ],
                       ),
                     ),
@@ -528,101 +665,14 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
     );
   }
 
-  // 3B. VAULT FILES VIEW (Inside X)
-  Widget _buildVaultFilesView() {
-    if (_isLoadingData) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-    }
-
-    if (_documents.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.folder_open_rounded, size: 36, color: Color(0xFF94A3B8)),
-            SizedBox(height: 6),
-            Text('No files indexed yet', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      physics: const BouncingScrollPhysics(),
-      itemCount: _documents.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final doc = _documents[index];
-        final idDisplay = doc.idNumber != null ? 'ID: ${doc.idNumber}' : 'Verified Document';
-
-        return Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.description_outlined, size: 18, color: Color(0xFF475569)),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      doc.title,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      idDisplay,
-                      style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
-                      maxLines: 1,
-                    ),
-                  ],
-                ),
-              ),
-              if (doc.idNumber != null)
-                IconButton(
-                  icon: const Icon(Icons.copy_rounded, size: 15, color: Color(0xFF64748B)),
-                  onPressed: () => _copy(doc.idNumber!, doc.title),
-                ),
-              IconButton(
-                icon: const Icon(Icons.share_outlined, size: 15, color: Color(0xFF64748B)),
-                onPressed: () async {
-                  final file = File(doc.filePath);
-                  if (await file.exists()) {
-                    await SharePlus.instance.share(
-                      ShareParams(files: [XFile(doc.filePath)], text: doc.title),
-                    );
-                  }
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // 4. BOTTOM INPUT BAR
   Widget _buildBottomInputBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+      height: 44,
+      padding: const EdgeInsets.only(left: 16, right: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.1),
       ),
       child: Row(
         children: [
@@ -632,11 +682,11 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
               onSubmitted: (_) => _sendChatMessage(),
               style: const TextStyle(fontSize: 12.5, color: Color(0xFF0F172A)),
               decoration: const InputDecoration(
-                hintText: 'Ask X...',
+                hintText: 'Ask Copilot...',
                 hintStyle: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 8),
+                contentPadding: EdgeInsets.symmetric(vertical: 10),
               ),
             ),
           ),
@@ -647,52 +697,20 @@ class _AssistiveBallDialogState extends State<AssistiveBallDialog> {
               child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0F172A)),
             )
           else
-            IconButton(
-              icon: const Icon(Icons.send_rounded, size: 16, color: Color(0xFF0F172A)),
-              onPressed: _sendChatMessage,
+            InkWell(
+              onTap: _sendChatMessage,
+              borderRadius: BorderRadius.circular(14),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(
+                  Icons.near_me_outlined,
+                  size: 18,
+                  color: Color(0xFF64748B),
+                ),
+              ),
             ),
         ],
       ),
     );
   }
-}
-
-class _ProjectXSmallPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    final paintDark = Paint()
-      ..color = const Color(0xFF1E293B)
-      ..style = PaintingStyle.fill;
-
-    final pathDark = Path()
-      ..moveTo(w * 0.1, 0)
-      ..lineTo(w * 0.38, 0)
-      ..lineTo(w * 0.9, h)
-      ..lineTo(w * 0.62, h)
-      ..close();
-
-    canvas.drawPath(pathDark, paintDark);
-
-    final rect = Rect.fromLTWH(0, 0, w, h);
-    final paintBlue = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
-      ).createShader(rect)
-      ..style = PaintingStyle.fill;
-
-    final pathBlue = Path()
-      ..moveTo(w * 0.62, 0)
-      ..lineTo(w * 0.9, 0)
-      ..lineTo(w * 0.38, h)
-      ..lineTo(w * 0.1, h)
-      ..close();
-
-    canvas.drawPath(pathBlue, paintBlue);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

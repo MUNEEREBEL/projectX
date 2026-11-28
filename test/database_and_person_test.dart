@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:x/core/database/database_service.dart';
 import 'package:x/core/services/person_resolution_engine.dart';
@@ -8,6 +9,8 @@ import 'package:x/models/person.dart';
 
 void main() {
   setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({'vault_owner_name': 'Rahul Sharma'});
     sqfliteFfiInit();
     if (databaseFactoryOrNull != databaseFactoryFfi) {
       databaseFactory = databaseFactoryFfi;

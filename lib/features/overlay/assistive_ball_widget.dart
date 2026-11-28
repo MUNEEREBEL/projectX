@@ -1,11 +1,75 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../main.dart';
 import 'assistive_ball_dialog.dart';
 
 class AssistiveBallWidget extends StatefulWidget {
   final Widget child;
 
+  static final ValueNotifier<bool> isEnabled = ValueNotifier<bool>(true);
+  static const MethodChannel _storageChannel = MethodChannel('com.example.x/storage_channel');
+
   const AssistiveBallWidget({super.key, required this.child});
+
+  static Future<bool> canDrawOverlays() async {
+    try {
+      final bool? res = await _storageChannel.invokeMethod('canDrawOverlays');
+      return res ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<bool> requestOverlayPermission() async {
+    try {
+      final bool? res = await _storageChannel.invokeMethod('requestOverlayPermission');
+      return res ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<void> startSystemOverlay() async {
+    try {
+      await _storageChannel.invokeMethod('startAssistiveBall');
+    } catch (_) {}
+  }
+
+  static Future<void> stopSystemOverlay() async {
+    try {
+      await _storageChannel.invokeMethod('stopAssistiveBall');
+    } catch (_) {}
+  }
+
+  static Future<void> loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool('assistive_ball_enabled') ?? false;
+    isEnabled.value = enabled;
+    if (enabled) {
+      final hasPerm = await canDrawOverlays();
+      if (hasPerm) {
+        await startSystemOverlay();
+      }
+    }
+  }
+
+  static Future<void> setEnabled(bool value) async {
+    isEnabled.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('assistive_ball_enabled', value);
+    if (value) {
+      final hasPerm = await canDrawOverlays();
+      if (!hasPerm) {
+        await requestOverlayPermission();
+        return;
+      }
+      await startSystemOverlay();
+    } else {
+      await stopSystemOverlay();
+    }
+  }
 
   @override
   State<AssistiveBallWidget> createState() => _AssistiveBallWidgetState();
@@ -20,6 +84,17 @@ class _AssistiveBallWidgetState extends State<AssistiveBallWidget> with SingleTi
   @override
   void initState() {
     super.initState();
+    AssistiveBallWidget.loadPreference();
+    AssistiveBallWidget._storageChannel.setMethodCallHandler((call) async {
+      if (call.method == 'openAssistiveDialog') {
+        final navCtx = appNavigatorKey.currentContext;
+        if (navCtx != null) {
+          AssistiveBallDialog.show(navCtx);
+        } else if (mounted) {
+          AssistiveBallDialog.show(context);
+        }
+      }
+    });
     _startDockTimer();
   }
 
@@ -70,97 +145,8 @@ class _AssistiveBallWidgetState extends State<AssistiveBallWidget> with SingleTi
 
   @override
   Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-    final isNearRight = _position.dx > screenSize.width / 2;
-
-    // Offset when docked: semi-hidden into edge
-    double displayX = _position.dx;
-    if (_isDocked) {
-      displayX = isNearRight ? screenSize.width - 22.0 : -32.0;
-    }
-
-    return Stack(
-      children: [
-        widget.child,
-
-        // Floating Assistive Ball / Edge Smart Panel Handle
-        AnimatedPositioned(
-          duration: _isDragging ? Duration.zero : const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
-          left: displayX,
-          top: _position.dy,
-          child: GestureDetector(
-            onPanStart: (_) {
-              _dockTimer?.cancel();
-              setState(() {
-                _isDragging = true;
-                _isDocked = false;
-              });
-            },
-            onPanUpdate: (details) {
-              setState(() {
-                double newX = _position.dx + details.delta.dx;
-                double newY = _position.dy + details.delta.dy;
-                newX = newX.clamp(-10.0, screenSize.width - 44.0);
-                newY = newY.clamp(60.0, screenSize.height - 120.0);
-                _position = Offset(newX, newY);
-              });
-            },
-            onPanEnd: (_) => _snapToNearestEdge(screenSize),
-            onTap: () {
-              if (_isDocked) {
-                _wakeUp();
-              } else {
-                _wakeUp();
-                AssistiveBallDialog.show(context);
-              }
-            },
-            child: Material(
-              color: Colors.transparent,
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 200),
-                opacity: _isDocked ? 0.45 : 1.0,
-                child: Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFFFFFFFF),
-                        Color(0xFFEFF6FF),
-                        Color(0xFFE0F2FE),
-                      ],
-                    ),
-                    border: Border.all(
-                      color: Colors.white,
-                      width: 2.0,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF38BDF8).withValues(alpha: _isDocked ? 0.15 : 0.45),
-                        blurRadius: 18,
-                        spreadRadius: 2,
-                      ),
-                      BoxShadow(
-                        color: const Color(0xFF0F172A).withValues(alpha: 0.10),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: _buildShieldXIcon(),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
+    // Only the unified native system overlay is shown, preventing duplicate in-app floating balls
+    return widget.child;
   }
 
   // Shield Icon with 'X' inside matching reference mockup

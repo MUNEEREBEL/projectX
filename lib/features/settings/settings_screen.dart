@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
 import '../../core/config/app_config.dart';
-import '../../core/database/database_service.dart';
-import '../../models/person.dart';
+import '../overlay/assistive_ball_widget.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -16,14 +14,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _ownerNameController = TextEditingController();
 
-  String _ownerName = 'Muneer Ahmed';
-  String _ownerDob = '15/08/1968';
-  List<Person> _persons = [];
-
-  bool _alert60 = true;
-  bool _alert30 = true;
-  bool _alert7 = true;
-  bool _alert1 = true;
+  String _ownerName = 'Primary Owner';
+  String _ownerDob = '';
+  bool _assistiveBallEnabled = true;
 
   @override
   void initState() {
@@ -36,7 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     final savedName = prefs.getString('vault_owner_name');
     final savedDob = prefs.getString('vault_owner_dob');
-    final persons = await DatabaseService.instance.getAllPersons();
+    final ballEnabled = prefs.getBool('assistive_ball_enabled') ?? true;
 
     if (mounted) {
       setState(() {
@@ -47,90 +40,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
         if (savedDob != null && savedDob.isNotEmpty) {
           _ownerDob = savedDob;
+        } else {
+          _ownerDob = 'Not specified';
         }
-        _persons = persons;
+        _assistiveBallEnabled = ballEnabled;
       });
     }
-  }
-
-  void _openAddMemberModal() {
-    final nameCtrl = TextEditingController();
-    String relationship = 'Father';
-
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (dialogCtx, setDialogState) {
-            return AlertDialog(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: const Text('Add Family Member', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Full Name', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: nameCtrl,
-                    decoration: InputDecoration(
-                      hintText: 'e.g. Absar Ahmed',
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text('Relationship', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue: relationship,
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                    ),
-                    items: ['Father', 'Mother', 'Spouse', 'Child', 'Sibling', 'Other'].map((r) {
-                      return DropdownMenuItem(value: r, child: Text(r));
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) setDialogState(() => relationship = val);
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (nameCtrl.text.trim().isNotEmpty) {
-                      final newPerson = Person(
-                        id: const Uuid().v4(),
-                        name: nameCtrl.text.trim(),
-                        relationship: relationship,
-                        avatarColorIndex: _persons.length % 6,
-                      );
-                      await DatabaseService.instance.upsertPerson(newPerson);
-                      Navigator.pop(ctx);
-                      _loadSettings();
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F172A),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Add Member'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 
   void _openApiKeyDialog() {
@@ -146,7 +61,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Enter your free Google Gemini API key from Google AI Studio (aistudio.google.com).',
+                'Enter your Google Gemini API Key (AIzaSy...) or ultra-low latency Groq API Key (gsk_...) to power real-time vision document extraction.',
                 style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
               ),
               const SizedBox(height: 12),
@@ -155,7 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 obscureText: true,
                 style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
                 decoration: InputDecoration(
-                  hintText: 'AIzaSy...',
+                  hintText: 'AIzaSy... or gsk_...',
                   filled: true,
                   fillColor: const Color(0xFFF8FAFC),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
@@ -241,31 +156,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 child: ListView(
                   physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 90),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 76),
                   children: [
                     // 2. PRIMARY OWNER PROFILE CARD
                     _buildOwnerProfileCard(),
                     const SizedBox(height: 18),
 
-                    // 3. FAMILY MEMBERS SECTION
-                    _buildSectionHeader('Family Members Section'),
-                    const SizedBox(height: 8),
-                    _buildFamilyMembersCard(),
-                    const SizedBox(height: 18),
-
-                    // 4. PRIVACY & LOCAL STORAGE DIAGNOSTIC CARD
+                    // 3. PRIVACY & LOCAL STORAGE DIAGNOSTIC CARD
                     _buildSectionHeader('Privacy & Local Storage Diagnostic Card'),
                     const SizedBox(height: 8),
                     _buildPrivacyDiagnosticCard(),
                     const SizedBox(height: 18),
 
-                    // 5. NOTIFICATION ALERTS TOGGLE
-                    _buildSectionHeader('Notification Alerts Toggle'),
+                    // 4. ASSISTIVE BALL X OVERLAY (System-Wide Floating Smart Ball)
+                    _buildSectionHeader('Assistive Ball X Overlay'),
                     const SizedBox(height: 8),
-                    _buildNotificationTogglesCard(),
+                    _buildAssistiveBallCard(),
                     const SizedBox(height: 18),
 
-                    // 6. API CONFIGURATION TILE
+                    // 5. API CONFIGURATION TILE
                     _buildSectionHeader('API Configuration Tile'),
                     const SizedBox(height: 8),
                     _buildApiConfigCard(),
@@ -386,90 +295,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 3. FAMILY MEMBERS CARD
-  Widget _buildFamilyMembersCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          // Self
-          _buildMemberAvatar('Self\n(${_ownerName.split(' ').first})', Icons.person),
-
-          // Father
-          _buildMemberAvatar('Father', Icons.elderly),
-
-          // Mother
-          _buildMemberAvatar('Mother', Icons.face),
-
-          // + Add Member Button
-          InkWell(
-            onTap: _openAddMemberModal,
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              width: 60,
-              height: 70,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFBFDBFE), style: BorderStyle.solid),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  Icon(Icons.add, color: Color(0xFF3B82F6), size: 20),
-                  SizedBox(height: 4),
-                  Text(
-                    'Add\nMember',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF3B82F6)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMemberAvatar(String label, IconData icon) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFFF1F5F9),
-            border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
-          ),
-          child: Icon(icon, size: 24, color: const Color(0xFF475569)),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF334155), height: 1.2),
-        ),
-      ],
-    );
-  }
-
-  // 4. PRIVACY DIAGNOSTIC CARD
+  // 3. PRIVACY DIAGNOSTIC CARD
   Widget _buildPrivacyDiagnosticCard() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -518,13 +344,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 5. NOTIFICATION ALERTS TOGGLES
-  Widget _buildNotificationTogglesCard() {
+  // 5. ASSISTIVE BALL X OVERLAY CARD
+  Widget _buildAssistiveBallCard() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white, width: 1.5),
         boxShadow: [
           BoxShadow(
@@ -534,37 +360,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-      child: Column(
-        children: [
-          _buildToggleRow('60 Days Expiry Alert', _alert60, (v) => setState(() => _alert60 = v)),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
-          _buildToggleRow('30 Days Expiry Alert', _alert30, (v) => setState(() => _alert30 = v)),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
-          _buildToggleRow('7 Days Expiry Alert', _alert7, (v) => setState(() => _alert7 = v)),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
-          _buildToggleRow('1 Day Expiry Alert', _alert1, (v) => setState(() => _alert1 = v)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildToggleRow(String title, bool value, ValueChanged<bool> onChanged) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.smart_toy_outlined, color: Color(0xFF00B4D8), size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Enable Assistive Ball X',
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Floating smart ball docked on screen edge for fast copying & chat',
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+                ),
+              ],
+            ),
           ),
           Switch(
-            value: value,
+            value: _assistiveBallEnabled,
             activeThumbColor: Colors.white,
-            activeTrackColor: const Color(0xFF0F172A),
+            activeTrackColor: const Color(0xFF00B4D8),
             inactiveThumbColor: Colors.white,
             inactiveTrackColor: const Color(0xFFCBD5E1),
-            onChanged: onChanged,
+            onChanged: (val) async {
+              setState(() => _assistiveBallEnabled = val);
+              await AssistiveBallWidget.setEnabled(val);
+            },
           ),
         ],
       ),

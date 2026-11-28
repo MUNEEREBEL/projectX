@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../models/document_model.dart';
 import '../../core/services/qa_assistant_service.dart';
 import '../vault/document_detail_screen.dart';
@@ -27,33 +28,15 @@ class AssistantScreen extends StatefulWidget {
 class _AssistantScreenState extends State<AssistantScreen> {
   final List<ChatMessage> _messages = [
     ChatMessage(
-      text: 'When does my car insurance expire?',
-      isUser: true,
-    ),
-    ChatMessage(
-      text: 'Your car insurance (Policy #1042-M) for the Honda City expires on 18th December 2026. This is in 25 days.',
+      text: 'Project X Assistant ready. Ask any question about your documents, policy numbers, or expiry dates.',
       isUser: false,
-      referenceDocuments: [
-        DocumentModel(
-          id: 'ref-car',
-          personId: 'father',
-          docType: 'VEHICLE_INSURANCE',
-          category: 'Vehicle',
-          title: 'Car Insurance - Father',
-          idNumber: '1042-M',
-          filePath: '',
-          fileName: 'car_insurance.pdf',
-          fileType: 'pdf',
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ),
-      ],
     ),
   ];
 
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
+  bool _offlineMode = false;
 
   final List<String> _suggestions = [
     'What is my PAN?',
@@ -76,7 +59,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     _scrollToBottom();
 
     try {
-      final response = await QAAssistantService.askQuestion(text);
+      final response = await QAAssistantService.askQuestion(text, forceOffline: _offlineMode);
       if (mounted) {
         setState(() {
           _messages.add(ChatMessage(
@@ -152,33 +135,53 @@ class _AssistantScreenState extends State<AssistantScreen> {
                         letterSpacing: -0.4,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDCFCE7),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF10B981),
-                              shape: BoxShape.circle,
-                            ),
+                    // Interactive Mode Pill: Cloud AI vs Fast Offline Search
+                    InkWell(
+                      onTap: () {
+                        setState(() => _offlineMode = !_offlineMode);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(_offlineMode
+                                ? 'Offline Fast Mode active (instant sub-100ms local answers)'
+                                : 'Online AI active (Gemini Vision intelligence)'),
+                            duration: const Duration(seconds: 1),
+                            backgroundColor: const Color(0xFF0F172A),
                           ),
-                          const SizedBox(width: 5),
-                          const Text(
-                            'Online',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF16A34A),
-                            ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _offlineMode ? const Color(0xFFEFF6FF) : const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _offlineMode ? const Color(0xFF93C5FD) : const Color(0xFF86EFAC),
+                            width: 1,
                           ),
-                        ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: _offlineMode ? const Color(0xFF3B82F6) : const Color(0xFF10B981),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              _offlineMode ? 'Offline Fast' : 'Online AI',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: _offlineMode ? const Color(0xFF1D4ED8) : const Color(0xFF16A34A),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -255,7 +258,12 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
               // 4. FLOATING INPUT BAR
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 6, 20, 85),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  6,
+                  16,
+                  MediaQuery.of(context).viewInsets.bottom > 0 ? 8 : 78,
+                ),
                 child: _buildInputBar(),
               ),
             ],
@@ -271,16 +279,16 @@ class _AssistantScreenState extends State<AssistantScreen> {
       return Align(
         alignment: Alignment.centerRight,
         child: Container(
-          margin: const EdgeInsets.only(bottom: 14, left: 50),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          margin: const EdgeInsets.only(bottom: 12, left: 50),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
           decoration: BoxDecoration(
             color: const Color(0xFF0F172A),
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF0F172A).withValues(alpha: 0.15),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
+                color: const Color(0xFF0F172A).withValues(alpha: 0.12),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
@@ -301,12 +309,12 @@ class _AssistantScreenState extends State<AssistantScreen> {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 14, right: 30),
+        margin: const EdgeInsets.only(bottom: 14, right: 28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.95),
                 borderRadius: BorderRadius.circular(20),
@@ -314,8 +322,8 @@ class _AssistantScreenState extends State<AssistantScreen> {
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFF0F172A).withValues(alpha: 0.04),
-                    blurRadius: 14,
-                    offset: const Offset(0, 3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 2),
                   ),
                 ],
               ),
@@ -330,6 +338,53 @@ class _AssistantScreenState extends State<AssistantScreen> {
               ),
             ),
 
+            // Copyable extracted values (1-tap autofill buttons)
+            if (message.copyableValues.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: message.copyableValues.map((val) {
+                  return InkWell(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: val));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Copied: "$val"'),
+                          duration: const Duration(seconds: 1),
+                          backgroundColor: const Color(0xFF0F172A),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.copy_rounded, size: 12, color: Color(0xFF2563EB)),
+                          const SizedBox(width: 4),
+                          Text(
+                            val,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF2563EB),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+
             // Attached Reference Document Card
             if (message.referenceDocuments.isNotEmpty) ...[
               const SizedBox(height: 6),
@@ -343,11 +398,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   Widget _buildReferenceCard(DocumentModel doc) {
     return Container(
-      width: 230,
+      width: 240,
       margin: const EdgeInsets.only(top: 4),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
+        color: Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
@@ -360,20 +415,16 @@ class _AssistantScreenState extends State<AssistantScreen> {
       ),
       child: Row(
         children: [
-          // Thumbnail Preview Icon / Box
           Container(
-            width: 32,
-            height: 40,
+            width: 34,
+            height: 38,
             decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.description_outlined, size: 18, color: Color(0xFF64748B)),
+            child: const Icon(Icons.description_outlined, size: 19, color: Color(0xFF2563EB)),
           ),
           const SizedBox(width: 10),
-
-          // Title & View Button
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -381,7 +432,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                 Text(
                   doc.title,
                   style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF0F172A),
                   ),
@@ -400,15 +451,15 @@ class _AssistantScreenState extends State<AssistantScreen> {
                   },
                   borderRadius: BorderRadius.circular(6),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
                     child: const Text(
-                      'View',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      'View Document →',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
                     ),
                   ),
                 ),
@@ -423,56 +474,68 @@ class _AssistantScreenState extends State<AssistantScreen> {
   // 4. FLOATING INPUT BAR
   Widget _buildInputBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      height: 50,
+      padding: const EdgeInsets.only(left: 14, right: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(color: Colors.white, width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 4),
+            color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          IconButton(
-            icon: const Icon(Icons.attach_file_rounded, color: Color(0xFF64748B), size: 20),
-            onPressed: () {},
+          const Icon(
+            Icons.auto_awesome_rounded,
+            size: 19,
+            color: Color(0xFF00B4D8),
           ),
-          IconButton(
-            icon: const Icon(Icons.mic_none_rounded, color: Color(0xFF64748B), size: 20),
-            onPressed: () {},
-          ),
+          const SizedBox(width: 8),
           Expanded(
             child: TextField(
               controller: _controller,
               onSubmitted: (_) => _sendMessage(),
-              style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.w500,
+              ),
               decoration: const InputDecoration(
-                hintText: 'Ask anything about your files...',
-                hintStyle: TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
+                hintText: 'Ask anything about your documents, PAN, Aadhaar...',
+                hintStyle: TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w400,
+                ),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 8),
+                contentPadding: EdgeInsets.symmetric(vertical: 10),
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
           InkWell(
             onTap: () => _sendMessage(),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(18),
+              width: 36,
+              height: 36,
+              decoration: const BoxDecoration(
+                color: Color(0xFF0F172A),
+                shape: BoxShape.circle,
               ),
-              child: const Text(
-                'Send',
-                style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700),
+              child: const Center(
+                child: Icon(
+                  Icons.arrow_upward_rounded,
+                  size: 18,
+                  color: Color(0xFF00F2FE),
+                ),
               ),
             ),
           ),

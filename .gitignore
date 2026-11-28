@@ -43,3 +43,18 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Environment & Secrets (NEVER push .env)
+.env
+.env.*
+!.env.example
+
+# Local SQLite databases, caches, and logs
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.backup
+vault_cache.json
+privdoc_vault.db
+
